@@ -16,26 +16,55 @@
             margin: 0;
         }
         .container {
-            width: 250px;
+            width: 360px;
             height: 450px;
             background-color: #22222b;
             display: flex;
+            flex-direction: column;
             justify-content: center;
             align-items: center;
             border-radius: 8px;
             box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+            padding: 20px;
+            box-sizing: border-box;
         }
-        h1 {
-            font-size: 2rem;
-            margin: 0;
-            letter-spacing: 2px;
+        .input-group {
+            width: 100%;
+            margin-bottom: 15px;
+        }
+        .input-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-size: 0.9rem;
+            color: #b3b3b9;
+        }
+        .input-group input {
+            width: 100%;
+            padding: 10px;
+            background-color: #18181f;
+            border: 1px solid #33333d;
+            border-radius: 4px;
+            color: #ffffff;
+            font-size: 1rem;
+            box-sizing: border-box;
+        }
+        .input-group input:focus {
+            outline: none;
+            border-color: #555566;
         }
     </style>
 </head>
 <body>
 
     <div class="container">
-        <h1>Starfall</h1>
+        <div class="input-group">
+            <label for="username">Username</label>
+            <input type="text" id="username">
+        </div>
+        <div class="input-group">
+            <label for="password">Password</label>
+            <input type="password" id="password">
+        </div>
     </div>
 
 </body>
