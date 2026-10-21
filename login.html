@@ -130,24 +130,37 @@
             user-select: none;
             padding: 5px;
         }
-        .toggle-action {
+        .toggle-action,
+        #toggle-action {
             appearance: none;
+            -webkit-appearance: none;
+            display: inline;
             border: 0;
             background: transparent;
-            color: #6262ff;
+            color: #7777ff;
             font: inherit;
             font-weight: bold;
             text-decoration: underline;
+            text-decoration-thickness: 1px;
             cursor: pointer;
             padding: 2px 3px;
+            opacity: 1;
+            visibility: visible;
         }
-        .toggle-action:hover {
-            color: #8a8aff;
+        .toggle-action:hover,
+        #toggle-action:hover {
+            color: #a0a0ff;
         }
-        .toggle-action:focus-visible {
-            outline: 2px solid #6262ff;
+        .toggle-action:focus-visible,
+        #toggle-action:focus-visible {
+            outline: 2px solid #7777ff;
             outline-offset: 3px;
             border-radius: 3px;
+        }
+        .toggle-action:disabled,
+        #toggle-action:disabled {
+            color: #7777ff;
+            opacity: 1;
         }
         .footer-links {
             position: absolute;
@@ -234,6 +247,9 @@
             usernameStatus.style.display = 'none';
             usernameInput.value = '';
 
+            toggleAction.className = 'toggle-action';
+            toggleAction.type = 'button';
+
             if (isLoginMode) {
                 submitBtn.textContent = 'Log In';
                 emailGroup.classList.remove('show');
@@ -293,10 +309,6 @@
                 alert('Please fill in all required fields');
                 return;
             }
-            if (usernameVal.length < 3 || usernameVal.length > 32) {
-                alert('Username must be between 3 and 32 characters');
-                return;
-            }
             if (!isLoginMode) {
                 const emailRegex = /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/;
                 if (!emailRegex.test(emailVal)) {
@@ -331,7 +343,7 @@
 
                 if (!response.ok) {
                     if (response.status === 409) {
-                        alert(data.error || 'Username or email already exists');
+                        alert(data.error || 'Username already exists');
                     } else if (response.status === 400) {
                         alert(data.error || 'Please check the information you entered');
                     } else if (response.status === 404) {
