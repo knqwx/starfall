@@ -66,26 +66,30 @@ async function initDB() {
             { sql: 'ALTER TABLE sessions_text_migration RENAME TO sessions' }
         ], 'write');
     }
-    // Canonicalize the reserved admin account's ID to 'knqw' and preserve all sessions.
-    // If a previous version assigned 'knqw' to another account, move that account to a fresh ID first.
-    const adminAccountResult = await db.execute({ sql: "SELECT id, username FROM users WHERE lower(username) = ? LIMIT 1", args: ['knqw'] });
-    if (adminAccountResult.rows.length) {
-        const adminAccount = adminAccountResult.rows[0];
-        const oldAdminId = String(adminAccount.id);
-        if (oldAdminId !== 'knqw') {
-            const collisionResult = await db.execute({ sql: 'SELECT id, username FROM users WHERE id = ? LIMIT 1', args: ['knqw'] });
-            const migration = [];
-            if (collisionResult.rows.length) {
-                let replacementId = String(Date.now()) + String(crypto.randomInt(100, 1000));
-                while ((await db.execute({ sql: 'SELECT 1 FROM users WHERE id = ?', args: [replacementId] })).rows.length) replacementId = String(Date.now()) + String(crypto.randomInt(100, 1000));
-                migration.push({ sql: 'UPDATE users SET id = ? WHERE id = ?', args: [replacementId, 'knqw'] });
-                migration.push({ sql: 'UPDATE sessions SET userId = ? WHERE userId = ?', args: [replacementId, 'knqw'] });
+    // Canonicalize account ID 3 to 'knqw' on startup, preserving sessions.
+    // If ID 'knqw' is already occupied by a different account, move that account to a fresh ID first.
+    // If ID 3 no longer exists, retain compatibility by canonicalizing the reserved knqw username.
+    const idThreeResult = await db.execute({ sql: 'SELECT id, username FROM users WHERE id = ? LIMIT 1', args: ['3'] });
+    const namedAdminResult = idThreeResult.rows.length
+        ? { rows: [] }
+        : await db.execute({ sql: 'SELECT id, username FROM users WHERE lower(username) = ? LIMIT 1', args: ['knqw'] });
+    const canonicalAccount = idThreeResult.rows[0] || namedAdminResult.rows[0];
+    if (canonicalAccount && String(canonicalAccount.id) !== 'knqw') {
+        const oldCanonicalId = String(canonicalAccount.id);
+        const collisionResult = await db.execute({ sql: 'SELECT id FROM users WHERE id = ? LIMIT 1', args: ['knqw'] });
+        const migration = [];
+        if (collisionResult.rows.length && String(collisionResult.rows[0].id) !== oldCanonicalId) {
+            let replacementId = String(Date.now()) + String(crypto.randomInt(100, 1000));
+            while ((await db.execute({ sql: 'SELECT 1 FROM users WHERE id = ?', args: [replacementId] })).rows.length) {
+                replacementId = String(Date.now()) + String(crypto.randomInt(100, 1000));
             }
-            migration.push({ sql: 'UPDATE users SET id = ? WHERE id = ?', args: ['knqw', oldAdminId] });
-            migration.push({ sql: 'UPDATE sessions SET userId = ? WHERE userId = ?', args: ['knqw', oldAdminId] });
-            await db.batch(migration, 'write');
-            console.log("Canonicalized the 'knqw' account ID.");
+            migration.push({ sql: 'UPDATE users SET id = ? WHERE id = ?', args: [replacementId, 'knqw'] });
+            migration.push({ sql: 'UPDATE sessions SET userId = ? WHERE userId = ?', args: [replacementId, 'knqw'] });
         }
+        migration.push({ sql: 'UPDATE users SET id = ? WHERE id = ?', args: ['knqw', oldCanonicalId] });
+        migration.push({ sql: 'UPDATE sessions SET userId = ? WHERE userId = ?', args: ['knqw', oldCanonicalId] });
+        await db.batch(migration, 'write');
+        console.log(`Canonicalized account ID ${oldCanonicalId} to 'knqw'.`);
     }
 
     await run(`CREATE TABLE IF NOT EXISTS login_lockouts (k TEXT PRIMARY KEY, fails INTEGER NOT NULL DEFAULT 0, level INTEGER NOT NULL DEFAULT 0, lockedUntil INTEGER NOT NULL DEFAULT 0, lastFailAt INTEGER NOT NULL DEFAULT 0)`);
