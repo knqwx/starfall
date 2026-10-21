@@ -18,7 +18,6 @@
         }
         .container {
             width: 360px;
-            height: 450px;
             background-color: #22222b;
             display: flex;
             flex-direction: column;
@@ -58,7 +57,7 @@
             outline: none;
             border-color: #555566;
         }
-        .login-btn {
+        .action-btn {
             width: 100%;
             padding: 10px;
             background-color: #3b3bf9;
@@ -70,8 +69,23 @@
             cursor: pointer;
             margin-top: 10px;
         }
-        .login-btn:hover {
+        .action-btn:hover {
             background-color: #3131d9;
+        }
+        .toggle-text {
+            margin-top: 15px;
+            font-size: 0.85rem;
+            color: #b3b3b9;
+            text-align: center;
+        }
+        .toggle-text a {
+            color: #3b3bf9;
+            text-decoration: none;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .toggle-text a:hover {
+            text-decoration: underline;
         }
         .footer-links {
             margin-top: 20px;
@@ -91,16 +105,30 @@
 <body>
 
     <div class="container">
-        <img src="Starfall.webp" alt="Starfall" class="logo">
+        <img src="assets/Starfall.webp" alt="Starfall" class="logo">
+        
+        <!-- Поля формы -->
         <div class="input-group">
             <label for="username">Username</label>
             <input type="text" id="username">
         </div>
+        
+        <!-- Дополнительное поле для регистрации (изначально скрыто) -->
+        <div class="input-group" id="email-group" style="display: none;">
+            <label for="email">Email</label>
+            <input type="email" id="email">
+        </div>
+
         <div class="input-group">
             <label for="password">Password</label>
             <input type="password" id="password">
         </div>
-        <button class="login-btn">Log In</button>
+
+        <button class="action-btn" id="submit-btn">Log In</button>
+
+        <div class="toggle-text" id="toggle-container">
+            Don't have an account? <a id="toggle-link">Sign up</a>
+        </div>
     </div>
 
     <div class="footer-links">
@@ -109,5 +137,42 @@
         <a href="#">Terms of Service</a>
     </div>
 
+    <script>
+        const submitBtn = document.getElementById('submit-btn');
+        const emailGroup = document.getElementById('email-group');
+        const toggleContainer = document.getElementById('toggle-container');
+        const toggleLink = document.getElementById('toggle-link');
+
+        let isLoginMode = true;
+
+        toggleLink.addEventListener('click', () => {
+            isLoginMode = !isLoginMode;
+
+            if (isLoginMode) {
+                // Переключение на Вход
+                submitBtn.textContent = 'Log In';
+                emailGroup.style.display = 'none';
+                toggleContainer.innerHTML = 'Don\'t have an account? <a id="toggle-link" href="#">Sign up</a>';
+            } else {
+                // Переключение на Регистрацию
+                submitBtn.textContent = 'Sign Up';
+                emailGroup.style.display = 'block';
+                toggleContainer.innerHTML = 'Already have an account? <a id="toggle-link" href="#">Log in</a>';
+            }
+
+            // Перепривязываем слушатель событий к новому созданному элементу ссылки
+            document.getElementById('toggle-link').addEventListener('click', (e) => {
+                e.preventDefault();
+                toggleLink.click(); // Повторный вызов логики
+            });
+        });
+
+        // Предотвращаем перезагрузку при клике на созданную ссылку через JS
+        document.addEventListener('click', function(e) {
+            if (e.target && e.target.id === 'toggle-link') {
+                e.preventDefault();
+            }
+        });
+    </script>
 </body>
 </html>
