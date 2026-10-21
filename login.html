@@ -319,7 +319,7 @@
                 return;
             }
             if (!isLoginMode) {
-                const emailRegex = /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/;
+                const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
                 if (!emailRegex.test(emailVal)) {
                     emailInput.classList.add('error');
                     emailError.style.display = 'block';
