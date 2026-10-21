@@ -8,7 +8,7 @@ app.use(express.static(path.join(__dirname)));
 
 // Главная страница
 app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'index.html'));
+    res.sendFile(path.join(__dirname, 'login.html'));
 });
 
 // Страница starfall.html, на которую перекидывает при регистрации
