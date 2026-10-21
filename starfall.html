@@ -161,11 +161,11 @@
         <div class="window" role="dialog" aria-modal="true" aria-labelledby="users-title">
             <button class="close-x" type="button" data-close="users-overlay" aria-label="Close">&times;</button>
             <h2 id="users-title">Users database</h2>
-            <input class="search" id="users-search" type="search" placeholder="Search username or email" autocomplete="off">
+            <input class="search" id="users-search" type="search" placeholder="Search username" autocomplete="off">
             <div class="count" id="users-count"></div>
             <div class="table-wrap">
                 <table>
-                    <thead><tr><th>ID</th><th>Username</th><th>Email</th><th>Joined</th></tr></thead>
+                    <thead><tr><th>ID</th><th>Username</th><th>Joined</th></tr></thead>
                     <tbody id="users-body"></tbody>
                 </table>
             </div>
@@ -182,7 +182,6 @@
             <div id="d-body" hidden>
                 <div class="profile-row"><span>ID</span><span id="d-id">-</span></div>
                 <div class="profile-row"><span>Username</span><span id="d-username">-</span></div>
-                <div class="profile-row"><span>Email</span><span id="d-email">-</span></div>
                 <div class="profile-row"><span>Member since</span><span id="d-joined">-</span></div>
                 <div class="profile-row"><span>Active sessions</span><span id="d-sessions">-</span></div>
                 <button class="btn danger" id="d-delete-btn" type="button">Delete account</button>
@@ -199,12 +198,10 @@
 <script>
 (async function () {
     const $ = (id) => document.getElementById(id);
-    const RENDER_API = 'https://starfall-rejh.onrender.com';
-    const API_BASE = (location.hostname.endsWith('.onrender.com') || location.hostname === 'localhost' || location.hostname === '127.0.0.1') ? '' : RENDER_API;
-    const TOKEN_KEY = 'sf_token';
-    const getToken = () => { try { return localStorage.getItem(TOKEN_KEY) || ''; } catch (e) { return ''; } };
-    const headers = () => { const t = getToken(); return t ? { 'X-Session': t, 'Accept': 'application/json' } : { 'Accept': 'application/json' }; };
-    const goLogin = () => { try { localStorage.removeItem(TOKEN_KEY); } catch (e) {} location.replace('login.html'); };
+    // Served by the backend on the same origin; authentication stays in HttpOnly cookies.
+    const API_BASE = '';
+    const headers = () => ({ 'Accept': 'application/json' });
+    const goLogin = () => location.replace('login.html');
     const fmtDate = (ms) => ms ? new Date(ms).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : '-';
 
     // ----- overlays -----
@@ -267,14 +264,14 @@
     let allUsers = [];
     function renderUsers() {
         const q = $('users-search').value.trim().toLowerCase();
-        const rows = q ? allUsers.filter((u) => u.username.toLowerCase().includes(q) || u.email.toLowerCase().includes(q)) : allUsers;
+        const rows = q ? allUsers.filter((u) => u.username.toLowerCase().includes(q)) : allUsers;
         const body = $('users-body');
         body.textContent = '';
         rows.forEach((u) => {
             const tr = document.createElement('tr');
             tr.tabIndex = 0;
             tr.title = 'Open profile';
-            [u.id, u.username, u.email || '-', fmtDate(u.joinedAt)].forEach((v) => { const td = document.createElement('td'); td.textContent = String(v); tr.appendChild(td); });
+            [u.id, u.username, fmtDate(u.joinedAt)].forEach((v) => { const td = document.createElement('td'); td.textContent = String(v); tr.appendChild(td); });
             tr.addEventListener('click', () => openUser(u.id));
             tr.addEventListener('keydown', (e) => { if (e.key === 'Enter') openUser(u.id); });
             body.appendChild(tr);
@@ -322,7 +319,6 @@
             $('detail-title').textContent = d.username;
             $('d-id').textContent = d.id;
             $('d-username').textContent = d.username;
-            $('d-email').textContent = d.email || '-';
             $('d-joined').textContent = fmtDate(d.joinedAt);
             $('d-sessions').textContent = d.activeSessions;
             $('d-delete-btn').hidden = !!d.isSelf;

@@ -1,12 +1,11 @@
 // Starfall backend: signup, login, sessions (ported from the Unique Trading auth system).
 // Env vars (Render -> Environment):
 //   TURSO_URL, TURSO_TOKEN        database
-//   ALLOWED_ORIGINS               optional, extra browser origins, comma separated
 //   SIGNUP_COOLDOWN=0             optional, turns off the "one account per day" rule (useful while testing)
 //   SKIP_DNS=1                    optional, skips the e-mail domain DNS check
-//   IP_HASH_SECRET                optional, secret used for lock-out keys
 const express = require('express');
 const path = require('path');
+const fs = require('fs').promises;
 const crypto = require('crypto');
 const dns = require('dns').promises;
 const { createClient } = require('@libsql/client');
@@ -28,7 +27,15 @@ app.set('trust proxy', 1); // Render has one proxy hop
 
 // ---------- database ----------
 async function initDB() {
-    const run = async (sql) => { try { await db.execute(sql); } catch (e) { /* column/table already exists */ } };
+    const run = async (sql) => {
+        try { await db.execute(sql); }
+        catch (e) {
+            // Only ignore an ALTER TABLE that repeats an existing column. All other
+            // database errors must fail startup instead of silently hiding corruption.
+            if (/^ALTER TABLE\s+users\s+ADD COLUMN/i.test(sql) && /duplicate column name/i.test(String(e.message || e))) return;
+            throw e;
+        }
+    };
     await run(`CREATE TABLE IF NOT EXISTS users (
         id TEXT PRIMARY KEY,
         username TEXT UNIQUE NOT NULL,
@@ -80,19 +87,31 @@ async function initDB() {
         ], 'write');
     }
 
-    await run(`CREATE TABLE IF NOT EXISTS login_lockouts (k TEXT PRIMARY KEY, fails INTEGER NOT NULL DEFAULT 0, level INTEGER NOT NULL DEFAULT 0, lockedUntil INTEGER NOT NULL DEFAULT 0, lastFailAt INTEGER NOT NULL DEFAULT 0)`);
+    await run(`CREATE TABLE IF NOT EXISTS request_limits (k TEXT PRIMARY KEY, windowStart INTEGER NOT NULL, hits INTEGER NOT NULL)`);
+    // Retire the old account lockout table; its long lockouts enabled account-lockout abuse.
+    await db.execute('DROP TABLE IF EXISTS login_lockouts');
     await run(`CREATE TABLE IF NOT EXISTS signup_log (id INTEGER PRIMARY KEY AUTOINCREMENT, ip TEXT, createdAt INTEGER)`);
+    await run(`CREATE INDEX IF NOT EXISTS signup_log_ip_created ON signup_log (ip, createdAt)`);
     await run(`CREATE INDEX IF NOT EXISTS sessions_user ON sessions (userId)`);
-    try { await db.execute('CREATE UNIQUE INDEX IF NOT EXISTS users_username_nocase ON users (username COLLATE NOCASE)'); } catch (e) { console.warn('Could not create case-insensitive username index; check for existing case-duplicate usernames.'); }
-    await run(`DELETE FROM sessions WHERE expiresAt < ${Date.now()}`);
+    await db.execute('CREATE UNIQUE INDEX IF NOT EXISTS users_username_nocase ON users (username COLLATE NOCASE)');
+    await db.execute({ sql: 'DELETE FROM sessions WHERE expiresAt < ?', args: [Date.now()] });
+    // Signup IP records are only needed for the one-day cooldown. Keep a small buffer.
+    await db.execute({ sql: 'DELETE FROM signup_log WHERE createdAt < ?', args: [Date.now() - 2 * DAY] });
+    await db.execute({ sql: 'DELETE FROM request_limits WHERE windowStart < ?', args: [Date.now() - 2 * DAY] });
     console.log('Turso Database initialized successfully');
 }
-setInterval(() => db.execute({ sql: 'DELETE FROM sessions WHERE expiresAt < ?', args: [Date.now()] }).catch(() => {}), HOUR);
+setInterval(() => {
+    const now = Date.now(), cutoff = now - 2 * DAY;
+    Promise.all([
+        db.execute({ sql: 'DELETE FROM sessions WHERE expiresAt < ?', args: [now] }),
+        db.execute({ sql: 'DELETE FROM signup_log WHERE createdAt < ?', args: [cutoff] }),
+        db.execute({ sql: 'DELETE FROM request_limits WHERE windowStart < ?', args: [cutoff] })
+    ]).catch((e) => console.error('Scheduled database cleanup failed:', e.message || e));
+}, HOUR);
 
 // ---------- small helpers ----------
 const route = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);   // Express 4 does not catch async errors
 const sha256 = (v) => crypto.createHash('sha256').update(String(v)).digest('hex');
-const tokenOk = (t) => /^[a-f0-9]{64}$/.test(String(t || ''));
 const safeEqual = (a, b) => crypto.timingSafeEqual(crypto.createHash('sha256').update(String(a)).digest(), crypto.createHash('sha256').update(String(b)).digest());
 const ipOf = (req) => {
     const ip = String(req.ip || '').trim().replace(/^::ffff:/i, '').toLowerCase();
@@ -110,50 +129,52 @@ function parseCookies(req) {
     return out;
 }
 function setCookie(res, name, value, maxAgeMs) {
-    const flags = IS_SECURE ? '; Secure; SameSite=None' : '; SameSite=Lax';
-    res.append('Set-Cookie', `${name}=${encodeURIComponent(value)}; Path=/; HttpOnly; Max-Age=${Math.floor(maxAgeMs / 1000)}${flags}`);
+    const secure = IS_SECURE ? '; Secure' : '';
+    res.append('Set-Cookie', `${name}=${encodeURIComponent(value)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.floor(maxAgeMs / 1000)}${secure}`);
 }
 const clearCookie = (res, name) => setCookie(res, name, '', 0);
 
-// simple in-memory rate limiter
-const buckets = new Map();
-function limited(key, max, windowMs) {
+// Shared, persistent rate limits work across server restarts and multiple instances.
+// Keys are hashed before storage so raw IP addresses/usernames are not written to this table.
+async function limited(key, max, windowMs) {
     const now = Date.now();
-    const b = (buckets.get(key) || []).filter((t) => now - t < windowMs);
-    b.push(now);
-    buckets.set(key, b);
-    return b.length > max;
+    const windowStart = Math.floor(now / windowMs) * windowMs;
+    const storageKey = sha256(key);
+    await db.execute({
+        sql: `INSERT INTO request_limits (k, windowStart, hits) VALUES (?, ?, 1)
+              ON CONFLICT(k) DO UPDATE SET
+                windowStart = CASE WHEN request_limits.windowStart <> excluded.windowStart THEN excluded.windowStart ELSE request_limits.windowStart END,
+                hits = CASE WHEN request_limits.windowStart <> excluded.windowStart THEN 1 ELSE request_limits.hits + 1 END`,
+        args: [storageKey, windowStart]
+    });
+    const result = await db.execute({ sql: 'SELECT hits FROM request_limits WHERE k = ?', args: [storageKey] });
+    return Number(result.rows[0]?.hits || 0) > max;
 }
-setInterval(() => { const now = Date.now(); for (const [k, v] of buckets) if (!v.some((t) => now - t < DAY)) buckets.delete(k); }, 10 * 60 * 1000);
 
-// ---------- CORS + security headers ----------
-const ALLOWED_ORIGINS = new Set([
-    'https://starfall-rejh.onrender.com',
-    'https://knqwix.github.io',
-    'https://knqwx.github.io',
-    ...String(process.env.ALLOWED_ORIGINS || '').split(',').map((s) => s.trim()).filter(Boolean)
-]);
+// Same-origin only: the frontend and cookie-authenticated API are served together.
 app.use((req, res, next) => {
     const origin = req.headers.origin;
-    if (origin) res.setHeader('Vary', 'Origin');
-    if (origin && ALLOWED_ORIGINS.has(origin)) {
-        res.setHeader('Access-Control-Allow-Origin', origin);
-        res.setHeader('Access-Control-Allow-Credentials', 'true');
-        res.setHeader('Access-Control-Allow-Methods', 'GET,POST,DELETE,OPTIONS');
-        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Accept, X-Session');
-        res.setHeader('Access-Control-Max-Age', '600');
+    if (req.method === 'OPTIONS') {
+        if (!origin) return res.sendStatus(204);
+        try {
+            const u = new URL(origin);
+            if (u.host === req.headers.host && u.protocol === (req.secure ? 'https:' : 'http:')) return res.sendStatus(204);
+        } catch (e) {}
+        return res.status(403).json({ error: 'Request blocked.' });
     }
-    if (req.method === 'OPTIONS') return res.sendStatus(origin && !ALLOWED_ORIGINS.has(origin) ? 403 : 204);
-    // browsers always attach Origin to cross-site POSTs: refuse the ones that are not ours
-    if (origin && req.method !== 'GET' && req.method !== 'HEAD' && !ALLOWED_ORIGINS.has(origin)) {
-        let sameHost = false;
-        try { sameHost = new URL(origin).host === req.headers.host; } catch (e) {}
-        if (!sameHost) return res.status(403).json({ error: 'Request blocked.' });
+    if (origin && req.method !== 'GET' && req.method !== 'HEAD') {
+        let sameOrigin = false;
+        try { const u = new URL(origin); sameOrigin = u.host === req.headers.host && u.protocol === (req.secure ? 'https:' : 'http:'); } catch (e) {}
+        if (!sameOrigin) return res.status(403).json({ error: 'Request blocked.' });
     }
     next();
 });
+// ---------- security headers ----------
 app.use((req, res, next) => {
+    const nonce = crypto.randomBytes(18).toString('base64');
+    res.locals.cspNonce = nonce;
     if (IS_SECURE) res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+    res.setHeader('Content-Security-Policy', `default-src 'self'; script-src 'self' 'nonce-${nonce}'; style-src 'self'; img-src 'self' data: https:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'`);
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'same-origin');
     res.setHeader('X-Frame-Options', 'DENY');
@@ -248,66 +269,34 @@ async function verifyPassword(u, password) {
     return ok;
 }
 
-// ---------- sign-in lock-outs (per IP + account): 3 wrong passwords = 3 h, next 3 = 24 h ----------
-const LOCK_AFTER = 3, LOCK_FIRST_MS = 3 * HOUR, LOCK_NEXT_MS = DAY, LOCK_FORGET_MS = 7 * DAY;
-const LOCK_SECRET = cleanEnv(process.env.IP_HASH_SECRET || TURSO_TOKEN || 'starfall-ip-guard-change-me');
-const lockKey = (ip, account) => crypto.createHmac('sha256', LOCK_SECRET).update(`login|${ip}|${String(account).toLowerCase()}`).digest('hex');
-const lockText = (ms) => { const total = Math.max(1, Math.ceil(ms / 60000)), h = Math.floor(total / 60), m = total % 60; return h > 0 ? `${h}h ${m}m` : `${m}m`; };
-async function lockoutStatus(key) {
-    const r = await db.execute({ sql: 'SELECT lockedUntil FROM login_lockouts WHERE k = ?', args: [key] });
-    const until = r.rows.length ? Number(r.rows[0].lockedUntil) || 0 : 0;
-    return until > Date.now() ? { locked: true, lockedUntil: until, retryAfterMs: until - Date.now() } : { locked: false, lockedUntil: 0, retryAfterMs: 0 };
-}
-async function lockoutFail(key) {
-    const now = Date.now();
-    const r = await db.execute({ sql: 'SELECT fails, level, lastFailAt FROM login_lockouts WHERE k = ?', args: [key] });
-    let fails = 0, level = 0;
-    if (r.rows.length && now - Number(r.rows[0].lastFailAt) < LOCK_FORGET_MS) { fails = Number(r.rows[0].fails) || 0; level = Number(r.rows[0].level) || 0; }
-    fails++;
-    let lockedUntil = 0;
-    if (fails >= LOCK_AFTER) { level++; lockedUntil = now + (level >= 2 ? LOCK_NEXT_MS : LOCK_FIRST_MS); fails = 0; }
-    await db.execute({ sql: 'INSERT INTO login_lockouts (k, fails, level, lockedUntil, lastFailAt) VALUES (?, ?, ?, ?, ?) ON CONFLICT(k) DO UPDATE SET fails = excluded.fails, level = excluded.level, lockedUntil = excluded.lockedUntil, lastFailAt = excluded.lastFailAt', args: [key, fails, level, lockedUntil, now] });
-    return { locked: lockedUntil > now, lockedUntil, retryAfterMs: Math.max(0, lockedUntil - now), attemptsLeft: lockedUntil ? 0 : LOCK_AFTER - fails };
-}
-const lockoutClear = (key) => db.execute({ sql: 'DELETE FROM login_lockouts WHERE k = ?', args: [key] });
-const lockedReply = (st) => ({ error: `Too many incorrect attempts. Sign-in is locked for this account from your network. Try again in ${lockText(st.retryAfterMs)}.`, locked: true, lockedUntil: st.lockedUntil, retryAfterMs: st.retryAfterMs });
-
+// Login throttling is short-lived and does not lock an account for hours. This prevents
+// a third party from repeatedly locking another person's account by guessing its username.
 const BAD_LOGIN = 'Incorrect username/email or password.';
 // "username or email" + password. Returns { user } or { status, body }. Never reveals whether the account exists.
 async function authenticate(req, id, password) {
     const ip = ipOf(req);
-    if (limited('login:' + ip, 20, 15 * 60 * 1000)) return { status: 429, body: { error: 'Too many attempts. Try again in a few minutes.' } };
+    if (await limited('login:' + ip, 20, 15 * 60 * 1000)) return { status: 429, body: { error: 'Too many attempts. Try again in a few minutes.' } };
     if (!id || !password) return { status: 400, body: { error: 'Please fill in all fields.' } };
+    if (Buffer.byteLength(password, 'utf8') > 1024 || Buffer.byteLength(id, 'utf8') > 254) return { status: 400, body: { error: 'Invalid sign-in details.' } };
+    const accountKey = sha256(String(id).trim().toLowerCase());
+    if (await limited('login-account:' + ip + ':' + accountKey, 10, 15 * 60 * 1000)) return { status: 429, body: { error: 'Too many attempts for these sign-in details. Try again in 15 minutes.' } };
     const rs = await db.execute({ sql: 'SELECT * FROM users WHERE lower(username) = lower(?) OR lower(email) = lower(?) ORDER BY (lower(username) = lower(?)) DESC LIMIT 1', args: [id, id, id] });
     const u = rs.rows.length ? rs.rows[0] : null;
-    const key = lockKey(ip, u ? 'u' + u.id : 'n:' + id);
-    const st = await lockoutStatus(key);
-    if (st.locked) { if (!u) await checkHash(password, DUMMY_HASH); return { status: 429, body: lockedReply(st) }; }
     const ok = u ? await verifyPassword(u, password) : (await checkHash(password, DUMMY_HASH), false); // same work either way
-    if (!ok) {
-        const f = await lockoutFail(key);
-        return { status: f.locked ? 429 : 401, body: f.locked ? lockedReply(f) : { error: BAD_LOGIN, attemptsLeft: f.attemptsLeft } };
-    }
-    await lockoutClear(key);
+    if (!ok) return { status: 401, body: { error: BAD_LOGIN } };
     return { user: u };
 }
 
 // ---------- sessions ----------
-// The browser holds a random 256-bit token; the database stores only its SHA-256.
-// Same-site pages use an httpOnly cookie. A page on another site (GitHub Pages) gets the token in the response and sends it back as X-Session.
+// The browser holds a random 256-bit token in an HttpOnly cookie; the database stores only its SHA-256.
 async function startSession(res, userId) {
     const raw = crypto.randomBytes(32).toString('hex'), now = Date.now();
     await db.execute({ sql: 'INSERT INTO sessions (id, userId, createdAt, expiresAt) VALUES (?, ?, ?, ?)', args: [sha256(raw), String(userId), now, now + SESSION_MS] });
     setCookie(res, 'sid', raw, SESSION_MS);
-    return raw;
 }
 const requestTokens = (req) => {
-    const out = [];
-    const h = String(req.headers['x-session'] || '');
-    if (tokenOk(h)) out.push(h);
-    const c = parseCookies(req).sid;
-    if (tokenOk(c) && c !== h) out.push(c);
-    return out;
+    const cookie = parseCookies(req).sid;
+    return /^[a-f0-9]{64}$/.test(String(cookie || '')) ? [cookie] : [];
 };
 async function currentUser(req) {
     for (const raw of requestTokens(req)) {
@@ -325,7 +314,6 @@ async function requireUser(req, res, next) {
     req.user = u;
     next();
 }
-const crossPage = (req) => !!req.headers.origin && req.headers.origin !== `${req.protocol}://${req.headers.host}`;
 
 // ---------- API ----------
 app.get('/api/health', route(async (req, res) => {
@@ -351,15 +339,15 @@ app.get('/api/me', route(requireUser), route(async (req, res) => {
 // Users database: checked on the server, so hiding/showing the button in the page is only cosmetic. Never returns passwords or hashes.
 app.get('/api/admin/users', route(requireUser), route(async (req, res) => {
     if (!isAdminUser(req.user)) return res.status(403).json({ error: 'Not allowed.' });
-    const r = await db.execute('SELECT id, username, email, joinedAt FROM users ORDER BY id');
+    const r = await db.execute('SELECT id, username, joinedAt FROM users ORDER BY id');
     res.json({
         total: r.rows.length,
-        users: r.rows.map((x) => ({ id: String(x.id), username: String(x.username), email: x.email ? String(x.email) : '', joinedAt: Number(x.joinedAt) || 0 }))
+        users: r.rows.map((x) => ({ id: String(x.id), username: String(x.username), joinedAt: Number(x.joinedAt) || 0 }))
     });
 }));
 
 app.get('/api/check-username', route(async (req, res) => {
-    if (limited('chk:' + ipOf(req), 120, 60 * 1000)) return res.status(429).json({ error: 'Too many requests' });
+    if (await limited('chk:' + ipOf(req), 120, 60 * 1000)) return res.status(429).json({ error: 'Too many requests' });
     const name = String(req.query.name || '').trim();
     const err = checkUsername(name);
     if (err) return res.json({ ok: false, message: err });
@@ -368,7 +356,7 @@ app.get('/api/check-username', route(async (req, res) => {
 }));
 
 app.get('/api/check-email', route(async (req, res) => {
-    if (limited('chk:' + ipOf(req), 120, 60 * 1000)) return res.status(429).json({ error: 'Too many requests' });
+    if (await limited('chk:' + ipOf(req), 120, 60 * 1000)) return res.status(429).json({ error: 'Too many requests' });
     const email = String(req.query.email || '').trim().toLowerCase();
     const err = await checkEmail(email);
     if (err) return res.json({ ok: false, message: err });
@@ -380,12 +368,14 @@ app.post('/api/signup', route(async (req, res) => {
     const fail = (message, code = 400) => res.status(code).json({ error: message });
     try {
         const ip = ipOf(req);
-        if (limited('signup:' + ip, 15, HOUR)) return fail('Too many attempts. Try again later.', 429);
+        if (await limited('signup:' + ip, 15, HOUR)) return fail('Too many attempts. Try again later.', 429);
         const b = req.body || {};
         const username = String(b.username || '').trim();
         const email = String(b.email || '').trim().toLowerCase();
         const password = String(b.password || '');
         if (!username || !email || !password) return fail('Please fill in all fields.');
+        if (Buffer.byteLength(password, 'utf8') < 8) return fail('Password must be at least 8 bytes long.');
+        if (Buffer.byteLength(password, 'utf8') > 1024) return fail('Password is too long (maximum 1024 bytes).');
 
         const uErr = checkUsername(username); if (uErr) return fail(uErr);
         const eErr = await checkEmail(email); if (eErr) return fail(eErr);
@@ -428,8 +418,8 @@ app.post('/api/signup', route(async (req, res) => {
         }
         if (ip) await db.execute({ sql: 'INSERT INTO signup_log (ip, createdAt) VALUES (?, ?)', args: [ip, now] });
         setCookie(res, 'ut_su', String(now), DAY);
-        const token = await startSession(res, newId);
-        res.json({ username, ...(crossPage(req) ? { token } : {}) });
+        await startSession(res, newId);
+        res.json({ username });
     } catch (e) {
         console.error('signup error:', e);
         fail('Server error during registration. Try again.', 500);
@@ -444,8 +434,8 @@ app.post('/api/login', route(async (req, res) => {
         if (!r.user) return res.status(r.status).json(r.body);
         const u = r.user, ip = ipOf(req);
         if (ip) { try { await db.execute({ sql: 'UPDATE users SET lastIp = ? WHERE id = ?', args: [ip, String(u.id)] }); } catch (e) {} }
-        const token = await startSession(res, u.id);
-        res.json({ username: String(u.username), ...(crossPage(req) ? { token } : {}) });
+        await startSession(res, u.id);
+        res.json({ username: String(u.username) });
     } catch (e) {
         console.error('login error:', e);
         res.status(500).json({ error: 'Server error. Try again later.' });
@@ -454,7 +444,7 @@ app.post('/api/login', route(async (req, res) => {
 
 // Change password after verifying the current password; other sessions are revoked.
 app.post('/api/change-password', route(requireUser), route(async (req, res) => {
-    if (limited('password-change:' + String(req.user.id), 5, 15 * 60 * 1000)) return res.status(429).json({ error: 'Too many attempts. Please try again later.' });
+    if (await limited('password-change:' + String(req.user.id), 5, 15 * 60 * 1000)) return res.status(429).json({ error: 'Too many attempts. Please try again later.' });
     const b = req.body && typeof req.body === 'object' ? req.body : {};
     const currentPassword = String(b.currentPassword || '');
     const newPassword = String(b.newPassword || '');
@@ -489,12 +479,12 @@ const parseUserId = (s) => {
 app.get('/api/admin/users/:id', route(requireUser), route(async (req, res) => {
     if (!isAdminUser(req.user)) return res.status(403).json({ error: 'Not allowed.' });
     const id = parseUserId(req.params.id);
-    const r = id ? await db.execute({ sql: 'SELECT id, username, email, joinedAt FROM users WHERE id = ?', args: [id] }) : { rows: [] };
+    const r = id ? await db.execute({ sql: 'SELECT id, username, joinedAt FROM users WHERE id = ?', args: [id] }) : { rows: [] };
     if (!r.rows.length) return res.status(404).json({ error: 'User not found.' });
     const s = await db.execute({ sql: 'SELECT COUNT(*) AS n FROM sessions WHERE userId = ? AND expiresAt > ?', args: [id, Date.now()] });
     const u = r.rows[0];
     res.json({
-        id: String(u.id), username: String(u.username), email: u.email ? String(u.email) : '',
+        id: String(u.id), username: String(u.username),
         joinedAt: Number(u.joinedAt) || 0, activeSessions: Number(s.rows[0].n) || 0,
         isSelf: String(u.id) === String(req.user.id),
         isAdmin: isAdminUser(u)
@@ -521,9 +511,16 @@ app.delete('/api/admin/users/:id', route(requireUser), route(async (req, res) =>
 app.use('/api', (req, res) => res.status(404).json({ error: 'Not found.' }));
 
 // ---------- pages (only these files are served, never the server code) ----------
-app.use('/assets', express.static(path.join(__dirname, 'assets')));
-app.get(['/', '/login.html'], (req, res) => res.sendFile(path.join(__dirname, 'login.html')));
-app.get('/starfall.html', (req, res) => res.sendFile(path.join(__dirname, 'starfall.html')));
+app.use('/assets', express.static(path.join(__dirname, 'assets'), { fallthrough: false, index: false }));
+async function sendHtml(req, res, fileName) {
+    const html = await fs.readFile(path.join(__dirname, fileName), 'utf8');
+    const nonce = res.locals.cspNonce;
+    const secured = html.replace(/<script(\s|>)/gi, (m, after) => `<script nonce=\"${nonce}\"${after}`);
+    res.setHeader('Cache-Control', 'no-store');
+    res.type('html').send(secured);
+}
+app.get(['/', '/login.html'], route((req, res) => sendHtml(req, res, 'login.html')));
+app.get('/starfall.html', route((req, res) => sendHtml(req, res, 'starfall.html')));
 
 // errors from any route become JSON instead of a crash / HTML page
 app.use((err, req, res, next) => {

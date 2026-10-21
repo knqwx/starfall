@@ -34,6 +34,8 @@
         .logo { width: 75px; height: 75px; margin-bottom: 8px; object-fit: contain; }
         .logo-title { font-size: 1.25rem; font-weight: bold; letter-spacing: 0.5px; }
 
+        #auth-form { width: 100%; }
+        .email-input-group { margin-bottom: 0; }
         .error-message {
             width: 100%;
             display: none;
@@ -140,7 +142,7 @@
 
         <div class="error-message" id="error-msg" role="alert"></div>
 
-        <form id="auth-form" style="width:100%" novalidate>
+        <form id="auth-form" novalidate>
             <div class="input-group">
                 <label for="main-input" id="main-label">Username or email</label>
                 <input type="text" id="main-input" autocomplete="username" autocapitalize="none" spellcheck="false">
@@ -148,7 +150,7 @@
             </div>
 
             <div class="signup-only field" id="email-group">
-                <div class="input-group" style="margin-bottom:0">
+                <div class="input-group email-input-group">
                     <label for="email-input">Email</label>
                     <input type="email" id="email-input" autocomplete="email" autocapitalize="none" spellcheck="false">
                     <div class="field-status" id="email-status"></div>
@@ -187,16 +189,11 @@
     let isLoginMode = true, busy = false;
 
     // ===== API helper =====
-    // Same site (Render) -> httpOnly cookie. Page on another site (GitHub Pages) -> the server returns a token that is sent back as X-Session.
-    const RENDER_API = 'https://starfall-rejh.onrender.com';
-    const API_BASE = (location.hostname.endsWith('.onrender.com') || location.hostname === 'localhost' || location.hostname === '127.0.0.1') ? '' : RENDER_API;
-    const TOKEN_KEY = 'sf_token';
-    const getToken = () => { try { return localStorage.getItem(TOKEN_KEY) || ''; } catch (e) { return ''; } };
+    // Served by the backend on the same origin; sessions stay in HttpOnly cookies.
+    const API_BASE = '';
 
     async function api(path, body) {
         const headers = { 'Accept': 'application/json' };
-        const tok = getToken();
-        if (tok) headers['X-Session'] = tok;
         const opts = { cache: 'no-store', headers };
         if (body !== undefined) {
             opts.method = 'POST';
@@ -288,6 +285,8 @@
             if (!isLoginMode) {
                 const username = mainInput.value.trim(), email = emailInput.value.trim().toLowerCase();
                 if (!username || !email || !password) { showError('Please fill in all fields.'); return; }
+                if (new TextEncoder().encode(password).length < 8) { showError('Password must be at least 8 bytes long.'); return; }
+                if (new TextEncoder().encode(password).length > 1024) { showError('Password is too long (maximum 1024 bytes).'); return; }
                 if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) { showError('Please enter a valid email address.'); return; }
                 $('loading-title').textContent = 'Creating your account…';
                 loading.classList.add('active');
@@ -305,15 +304,9 @@
             if (!result.ok) {
                 loading.classList.remove('active');
                 let msg = result.data.error || 'Something went wrong. Try again.';
-                if (result.status === 401 && isLoginMode && Number.isInteger(result.data.attemptsLeft)) {
-                    const n = result.data.attemptsLeft;
-                    msg += ' ' + n + ' more wrong ' + (n === 1 ? 'try' : 'tries') + ' and sign-in is locked for 3 hours.';
-                }
                 showError(msg);
                 return;
             }
-            // save the session token (only sent for pages on another site) before leaving the page
-            try { if (result.data.token) localStorage.setItem(TOKEN_KEY, result.data.token); } catch (err) {}
             redirecting = true;
             submitBtn.textContent = 'Opening Starfall…';
             window.location.href = 'starfall.html';
