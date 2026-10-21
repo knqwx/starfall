@@ -1,111 +1,92 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Starfall</title>
     <style>
+        * { box-sizing: border-box; }
+        html { -webkit-text-size-adjust: 100%; }
         body {
             background-color: #18181f;
             color: #ffffff;
             font-family: Arial, sans-serif;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
             margin: 0;
-            box-sizing: border-box;
-            position: relative;
+            min-height: 100vh;
+            min-height: 100dvh;
+            padding: 16px 16px 90px;
+            display: flex;
+            overflow-x: hidden;
         }
+        /* auto margins centre the card without ever pushing its top off-screen on small or zoomed screens */
         .container {
-            width: 410px;
+            width: min(410px, 100%);
+            margin: auto;
             background-color: #22222b;
             display: flex;
             flex-direction: column;
             align-items: center;
             border-radius: 12px;
             box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
-            padding: 35px 25px 25px 25px;
-            box-sizing: border-box;
+            padding: 35px clamp(16px, 6vw, 25px) 25px;
         }
-        .logo-container {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            margin-bottom: 25px;
-        }
-        .logo {
-            width: 75px;
-            height: 75px;
-            margin-bottom: 8px;
-            object-fit: contain;
-        }
-        .logo-title {
-            font-size: 1.25rem;
-            font-weight: bold;
-            color: #ffffff;
-            letter-spacing: 0.5px;
-        }
-        .input-group {
+        .logo-container { display: flex; flex-direction: column; align-items: center; margin-bottom: 25px; }
+        .logo { width: 75px; height: 75px; margin-bottom: 8px; object-fit: contain; }
+        .logo-title { font-size: 1.25rem; font-weight: bold; letter-spacing: 0.5px; }
+
+        .error-message {
             width: 100%;
-            margin-bottom: 22px;
-            transition: all 0.3s ease;
-            position: relative;
+            display: none;
+            color: #ff6b6b;
+            font-size: 0.8rem;
+            text-align: center;
+            line-height: 1.4;
+            overflow-wrap: anywhere;
+            background: rgba(249, 59, 59, 0.1);
+            border: 1px solid rgba(249, 59, 59, 0.25);
+            border-radius: 6px;
+            padding: 8px;
+            margin-bottom: 16px;
         }
-        .input-group label {
-            display: block;
-            margin-bottom: 6px;
-            font-size: 0.95rem;
-            color: #b3b3b9;
-        }
-        .input-group input {
+
+        .input-group { width: 100%; margin-bottom: 18px; }
+        .input-group label { display: block; margin-bottom: 6px; font-size: 0.95rem; color: #b3b3b9; }
+        .input-group input[type="text"],
+        .input-group input[type="email"],
+        .input-group input[type="password"] {
             width: 100%;
             padding: 11px;
-            background-color: #18181f !important;
+            background-color: #18181f;
             border: 1px solid #33333d;
             border-radius: 6px;
-            color: #ffffff !important;
+            color: #ffffff;
             font-size: 1rem;
-            box-sizing: border-box;
         }
-        .input-group input:focus {
-            outline: none;
-            border-color: #555566;
-        }
-        .input-group input.error {
-            border-color: #f93b3b;
-        }
-        .input-group input.success {
-            border-color: #3bf973;
-        }
-        .status-msg {
-            position: absolute;
-            bottom: -18px;
-            left: 0;
-            font-size: 0.75rem;
-            display: none;
-        }
-        .status-msg.error {
-            color: #f93b3b;
-            display: block;
-        }
-        .status-msg.success {
-            color: #3bf973;
-            display: block;
-        }
-        #email-group {
-            max-height: 0;
-            opacity: 0;
-            overflow: hidden;
-            margin-bottom: 0;
-            transition: max-height 0.3s ease, opacity 0.3s ease, margin-bottom 0.3s ease;
-        }
-        #email-group.show {
-            max-height: 120px;
-            opacity: 1;
-            margin-bottom: 22px;
-        }
+        .input-group input:focus { outline: none; border-color: #555566; }
+        .field-status { font-size: 0.75rem; margin-top: 5px; min-height: 14px; color: #8a8a94; overflow-wrap: anywhere; }
+        .field-status.ok { color: #3bf973; }
+        .field-status.bad { color: #f93b3b; }
+
+        /* sections that only exist while signing up */
+        .signup-only { width: 100%; max-height: 0; opacity: 0; overflow: hidden; margin: 0; pointer-events: none;
+            transition: max-height 0.35s ease, opacity 0.25s ease, margin 0.35s ease; }
+        .signup-only.show { max-height: 460px; opacity: 1; margin-bottom: 18px; pointer-events: auto; }
+        .signup-only.field.show { max-height: 140px; }
+
+        .pw-bar { height: 6px; background: #18181f; border-radius: 6px; overflow: hidden; border: 1px solid #33333d; }
+        .pw-bar-fill { height: 100%; width: 0%; background: #f93b3b; transition: width 0.25s ease, background-color 0.25s ease; }
+        .pw-label { display: flex; justify-content: space-between; font-size: 0.75rem; color: #b3b3b9; margin: 6px 0 8px; }
+        .pw-rules { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 3px 10px; font-size: 0.72rem; color: #7b7b85; }
+        .pw-rules li::before { content: '\2715'; display: inline-block; width: 14px; color: #f93b3b; }
+        .pw-rules li.ok { color: #cfcfd6; }
+        .pw-rules li.ok::before { content: '\2713'; color: #3bf973; }
+        .age-check { display: flex; gap: 8px; align-items: flex-start; color: #b3b3b9; font-size: 0.8rem; line-height: 1.4; cursor: pointer; }
+        .age-check input { margin-top: 2px; accent-color: #3b3bf9; }
+
+        .captcha-box { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+        .captcha-question { background: #18181f; border: 1px solid #33333d; border-radius: 6px; padding: 11px 14px; color: #7777ff; font-weight: bold; white-space: nowrap; user-select: none; }
+        .captcha-box input { flex: 1 1 110px; min-width: 0; }
+
         .action-btn {
             width: 100%;
             padding: 13px;
@@ -119,99 +100,98 @@
             margin-top: 5px;
             transition: background-color 0.2s;
         }
-        .action-btn:hover {
-            background-color: #3131d9;
+        .action-btn:hover { background-color: #3131d9; }
+        .action-btn:disabled { opacity: 0.7; cursor: default; }
+        .toggle-text { margin-top: 18px; font-size: 0.9rem; color: #b3b3b9; text-align: center; user-select: none; padding: 5px; }
+        .toggle-action {
+            appearance: none; -webkit-appearance: none; border: 0; background: transparent;
+            color: #7777ff; font: inherit; font-weight: bold; text-decoration: underline; cursor: pointer; padding: 2px 3px;
         }
-        .toggle-text {
-            margin-top: 18px;
-            font-size: 0.9rem;
-            color: #b3b3b9;
-            text-align: center;
-            user-select: none;
-            padding: 5px;
-        }
-        .toggle-action,
-        #toggle-action {
-            appearance: none;
-            -webkit-appearance: none;
-            display: inline;
-            border: 0;
-            background: transparent;
-            color: #7777ff;
-            font: inherit;
-            font-weight: bold;
-            text-decoration: underline;
-            text-decoration-thickness: 1px;
-            cursor: pointer;
-            padding: 2px 3px;
-            opacity: 1;
-            visibility: visible;
-        }
-        .toggle-action:hover,
-        #toggle-action:hover {
-            color: #a0a0ff;
-        }
-        .toggle-action:focus-visible,
-        #toggle-action:focus-visible {
-            outline: 2px solid #7777ff;
-            outline-offset: 3px;
-            border-radius: 3px;
-        }
-        .toggle-action:disabled,
-        #toggle-action:disabled {
-            color: #7777ff;
-            opacity: 1;
-        }
-        .footer-links {
-            position: absolute;
-            bottom: 35px;
-            left: 50%;
-            transform: translateX(-50%);
-            display: flex;
-            gap: 25px;
-            align-items: center;
-        }
-        .footer-links a {
-            color: #7b7b85;
-            text-decoration: none;
-            font-size: 0.95rem;
-        }
-        .footer-links a:hover {
-            color: #ffffff;
-        }
+        .toggle-action:hover { color: #a0a0ff; }
+        .toggle-action:focus-visible { outline: 2px solid #7777ff; outline-offset: 3px; border-radius: 3px; }
+
+        .footer-links { position: absolute; bottom: 35px; left: 50%; transform: translateX(-50%); display: flex; gap: 25px; align-items: center; white-space: nowrap; }
+        .footer-links a { color: #7b7b85; text-decoration: none; font-size: 0.95rem; }
+        .footer-links a:hover { color: #ffffff; }
+
+        .redirect-loading { position: fixed; inset: 0; z-index: 1000; display: none; align-items: center; justify-content: center;
+            flex-direction: column; gap: 16px; padding: 24px; background: rgba(24, 24, 31, .97); text-align: center; }
+        .redirect-loading.active { display: flex; }
+        .redirect-spinner { width: 46px; height: 46px; border-radius: 50%; border: 4px solid #33333d; border-top-color: #3b3bf9; animation: spin .8s linear infinite; }
+        .redirect-loading span { color: #9a9aa5; font-size: 0.85rem; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @media (max-width: 360px) { .pw-rules { grid-template-columns: 1fr; } }
+        @media (prefers-reduced-motion: reduce) { * { transition: none !important; } .redirect-spinner { animation-duration: 2s; } }
     </style>
 </head>
 <body>
+
+    <div class="redirect-loading" id="redirect-loading" role="status" aria-live="polite">
+        <div class="redirect-spinner" aria-hidden="true"></div>
+        <strong id="loading-title">Signing you in…</strong>
+        <span>The server may need a few seconds to wake up.</span>
+    </div>
 
     <div class="container">
         <div class="logo-container">
             <img src="assets/Starfall.webp" alt="Starfall" class="logo">
             <span class="logo-title">Starfall</span>
         </div>
-        
-        <div class="input-group">
-            <label for="username">Username</label>
-            <input type="text" id="username">
-            <span class="status-msg" id="username-status"></span>
-        </div>
-        
-        <div class="input-group" id="email-group">
-            <label for="email">Email</label>
-            <input type="email" id="email">
-            <span class="status-msg" id="email-error">Invalid email format</span>
-        </div>
 
-        <div class="input-group">
-            <label for="password">Password</label>
-            <input type="password" id="password">
-        </div>
+        <div class="error-message" id="error-msg" role="alert"></div>
 
-        <button class="action-btn" id="submit-btn">Log In</button>
+        <form id="auth-form" style="width:100%" novalidate>
+            <div class="input-group">
+                <label for="main-input" id="main-label">Username or email</label>
+                <input type="text" id="main-input" autocomplete="username" autocapitalize="none" spellcheck="false">
+                <div class="field-status" id="username-status"></div>
+            </div>
 
-        <div class="toggle-text" id="toggle-container">
-            <span id="toggle-prompt">Don't have an account?</span>
-            <button class="toggle-action" id="toggle-action" type="button">Sign up</button>
-        </div>
+            <div class="signup-only field" id="email-group">
+                <div class="input-group" style="margin-bottom:0">
+                    <label for="email-input">Email</label>
+                    <input type="email" id="email-input" autocomplete="email" autocapitalize="none" spellcheck="false">
+                    <div class="field-status" id="email-status"></div>
+                </div>
+            </div>
+
+            <div class="input-group">
+                <label for="password-input">Password</label>
+                <input type="password" id="password-input" autocomplete="current-password">
+            </div>
+
+            <div class="signup-only" id="pw-meter">
+                <div class="pw-bar"><div class="pw-bar-fill" id="pw-bar-fill"></div></div>
+                <div class="pw-label"><span>Password strength</span><b id="pw-strength-text">-</b></div>
+                <ul class="pw-rules" id="pw-rules">
+                    <li data-rule="len">10+ characters</li>
+                    <li data-rule="lower">Lowercase letter</li>
+                    <li data-rule="upper">Uppercase letter</li>
+                    <li data-rule="num">A number</li>
+                    <li data-rule="sym">A symbol (!@#$...)</li>
+                    <li data-rule="max">At most 128 characters</li>
+                </ul>
+            </div>
+
+            <div class="signup-only" id="age-wrap">
+                <label class="age-check"><input type="checkbox" id="age-checkbox"> <span>I am at least 13 years old.</span></label>
+            </div>
+
+            <div class="input-group">
+                <label for="captcha-input">Security verification</label>
+                <div class="captcha-box">
+                    <div class="captcha-question" id="captcha-question">? + ? =</div>
+                    <input type="text" id="captcha-input" inputmode="numeric" autocomplete="off" placeholder="Answer">
+                </div>
+            </div>
+
+            <button type="submit" class="action-btn" id="submit-btn">Log In</button>
+
+            <div class="toggle-text">
+                <span id="toggle-prompt">Don't have an account?</span>
+                <button class="toggle-action" id="toggle-btn" type="button">Sign up</button>
+            </div>
+        </form>
     </div>
 
     <div class="footer-links">
@@ -220,176 +200,210 @@
         <a href="#">Terms of Service</a>
     </div>
 
-    <script type="module">
-        // Authentication must go through the Starfall backend. Never put Turso
-        // credentials in browser code. These endpoints must be implemented server-side.
-        // If this page is opened from Render itself, use same-origin; otherwise
-        // (e.g. GitHub Pages) talk to the Render backend.
-        const RENDER_API = 'https://starfall-rejh.onrender.com';
-        const API_BASE = window.STARFALL_API_BASE ||
-            (location.hostname.endsWith('onrender.com') ? '' : RENDER_API);
+<script>
+(function () {
+    const $ = (id) => document.getElementById(id);
+    const mainLabel = $('main-label'), mainInput = $('main-input'), emailInput = $('email-input'),
+          passwordInput = $('password-input'), captchaQuestion = $('captcha-question'), captchaInput = $('captcha-input'),
+          submitBtn = $('submit-btn'), togglePrompt = $('toggle-prompt'), toggleBtn = $('toggle-btn'),
+          authForm = $('auth-form'), errorMsg = $('error-msg'), usernameStatus = $('username-status'), emailStatus = $('email-status'),
+          loading = $('redirect-loading');
 
-        const submitBtn = document.getElementById('submit-btn');
-        const emailGroup = document.getElementById('email-group');
-        const toggleContainer = document.getElementById('toggle-container');
-        const emailInput = document.getElementById('email');
-        const emailError = document.getElementById('email-error');
-        const usernameInput = document.getElementById('username');
-        const usernameStatus = document.getElementById('username-status');
+    let isLoginMode = true, correctAnswer = 0, busy = false;
 
-        let isLoginMode = true;
+    // ===== API helper =====
+    // Same site (Render) -> httpOnly cookie. Page on another site (GitHub Pages) -> the server returns a token that is sent back as X-Session.
+    const RENDER_API = 'https://starfall-rejh.onrender.com';
+    const API_BASE = (location.hostname.endsWith('.onrender.com') || location.hostname === 'localhost' || location.hostname === '127.0.0.1') ? '' : RENDER_API;
+    const TOKEN_KEY = 'sf_token';
+    const getToken = () => { try { return localStorage.getItem(TOKEN_KEY) || ''; } catch (e) { return ''; } };
 
-        const togglePrompt = document.getElementById('toggle-prompt');
+    async function api(path, body) {
+        const headers = { 'Accept': 'application/json' };
+        const tok = getToken();
+        if (tok) headers['X-Session'] = tok;
+        const opts = { cache: 'no-store', headers };
+        if (body !== undefined) {
+            opts.method = 'POST';
+            headers['Content-Type'] = 'application/json';
+            opts.body = JSON.stringify(body);
+        }
+        try {
+            const r = await fetch(API_BASE + path, opts);
+            let data = {};
+            try { data = await r.json(); } catch (e) {}
+            return { ok: r.ok, status: r.status, data: data || {} };
+        } catch (e) {
+            return { ok: false, status: 0, data: { error: 'Cannot reach the server. Check your connection and try again. (' + (e && e.message ? e.message : 'network error') + ')' } };
+        }
+    }
 
-        // Only the actual button toggles modes. Delegation keeps the handler
-        // working even if the button's text changes.
-        toggleContainer.addEventListener('click', (event) => {
-            const button = event.target.closest('#toggle-action');
-            if (!button || !toggleContainer.contains(button)) return;
+    // ===== Captcha (a speed bump only; the server enforces the real limits) =====
+    function generateCaptcha() {
+        const a = Math.floor(Math.random() * 10) + 1, b = Math.floor(Math.random() * 10) + 1;
+        correctAnswer = a + b;
+        captchaQuestion.textContent = a + ' + ' + b + ' =';
+        captchaInput.value = '';
+    }
+    generateCaptcha();
 
-            event.preventDefault();
-            isLoginMode = !isLoginMode;
+    function showError(msg) { errorMsg.textContent = msg; errorMsg.style.display = 'block'; generateCaptcha(); }
 
-            emailInput.classList.remove('error', 'success');
-            emailError.style.display = 'none';
-            emailInput.value = '';
+    // ===== Login / sign-up mode =====
+    function setStatus(el, cls, text) { el.className = 'field-status ' + cls; el.textContent = text; }
+    function setMode(loginMode) {
+        isLoginMode = loginMode;
+        errorMsg.style.display = 'none';
+        generateCaptcha();
+        setStatus(usernameStatus, '', ''); setStatus(emailStatus, '', '');
+        $('email-group').classList.toggle('show', !loginMode);
+        $('pw-meter').classList.toggle('show', !loginMode);
+        $('age-wrap').classList.toggle('show', !loginMode);
+        if (loginMode) {
+            mainLabel.textContent = 'Username or email';
+            submitBtn.textContent = 'Log In';
+            passwordInput.autocomplete = 'current-password';
+            togglePrompt.textContent = "Don't have an account?";
+            toggleBtn.textContent = 'Sign up';
+        } else {
+            mainLabel.textContent = 'Username';
+            submitBtn.textContent = 'Sign Up';
+            passwordInput.autocomplete = 'new-password';
+            togglePrompt.textContent = 'Already have an account?';
+            toggleBtn.textContent = 'Log in';
+            updatePasswordMeter();
+            if (mainInput.value.trim()) runUsernameCheck();
+            if (emailInput.value.trim()) runEmailCheck();
+        }
+    }
+    toggleBtn.addEventListener('click', () => { userSeq++; emailSeq++; setMode(!isLoginMode); });
+    if (new URLSearchParams(location.search).get('mode') === 'signup') setMode(false);
 
-            usernameInput.classList.remove('error', 'success');
-            usernameStatus.style.display = 'none';
-            usernameStatus.textContent = '';
+    // ===== Password strength (UX only; the server enforces the same rules) =====
+    function passwordChecks(pw) {
+        return { len: pw.length >= 10, lower: /[a-z]/.test(pw), upper: /[A-Z]/.test(pw), num: /[0-9]/.test(pw), sym: /[^A-Za-z0-9]/.test(pw), max: pw.length > 0 && pw.length <= 128 };
+    }
+    function passwordScore(pw, c) {
+        if (!pw) return 0;
+        let pool = 0;
+        if (/[a-z]/.test(pw)) pool += 26;
+        if (/[A-Z]/.test(pw)) pool += 26;
+        if (/[0-9]/.test(pw)) pool += 10;
+        if (/[^A-Za-z0-9]/.test(pw)) pool += 32;
+        const bits = pw.length * Math.log2(Math.max(pool, 2));
+        let score = bits < 36 ? 1 : bits < 52 ? 2 : bits < 70 ? 3 : 4;
+        if (!c.max) score = Math.min(score, 1);
+        if (!c.len) score = Math.min(score, 2);
+        return score;
+    }
+    const passwordOk = (c) => Object.values(c).every(Boolean);
+    function updatePasswordMeter() {
+        const pw = passwordInput.value, c = passwordChecks(pw), score = passwordScore(pw, c);
+        const labels = ['-', 'Weak', 'Fair', 'Good', 'Strong'], colors = ['#f93b3b', '#f93b3b', '#ffb020', '#9acd32', '#3bf973'];
+        $('pw-bar-fill').style.width = (score * 25) + '%';
+        $('pw-bar-fill').style.backgroundColor = colors[score];
+        $('pw-strength-text').textContent = labels[score];
+        $('pw-strength-text').style.color = colors[score];
+        document.querySelectorAll('#pw-rules li').forEach((li) => li.classList.toggle('ok', !!c[li.dataset.rule]));
+    }
+    passwordInput.addEventListener('input', updatePasswordMeter);
+    updatePasswordMeter();
 
-            if (isLoginMode) {
-                submitBtn.textContent = 'Log In';
-                emailGroup.classList.remove('show');
-                togglePrompt.textContent = "Don't have an account?";
-                button.textContent = 'Sign up';
-            } else {
-                submitBtn.textContent = 'Sign Up';
-                emailGroup.classList.add('show');
-                togglePrompt.textContent = 'Already have an account?';
-                button.textContent = 'Log in';
-            }
+    // ===== Live availability checks (sign-up only) =====
+    let userSeq = 0, emailSeq = 0, userTimer = null, emailTimer = null;
+    async function runUsernameCheck() {
+        const seq = ++userSeq, name = mainInput.value.trim();
+        if (isLoginMode || !name) { setStatus(usernameStatus, '', ''); return; }
+        setStatus(usernameStatus, '', 'Checking...');
+        const r = await api('/api/check-username?name=' + encodeURIComponent(name));
+        if (seq !== userSeq) return;
+        if (!r.ok) { setStatus(usernameStatus, '', ''); return; }
+        setStatus(usernameStatus, r.data.ok ? 'ok' : 'bad', r.data.message || '');
+    }
+    async function runEmailCheck() {
+        const seq = ++emailSeq, email = emailInput.value.trim().toLowerCase();
+        if (isLoginMode || !email) { setStatus(emailStatus, '', ''); return; }
+        if (!email.includes('@') || email.endsWith('@')) { setStatus(emailStatus, '', 'Keep typing your email...'); return; }
+        setStatus(emailStatus, '', 'Checking...');
+        const r = await api('/api/check-email?email=' + encodeURIComponent(email));
+        if (seq !== emailSeq) return;
+        if (!r.ok) { setStatus(emailStatus, '', ''); return; }
+        setStatus(emailStatus, r.data.ok ? 'ok' : 'bad', r.data.message || '');
+    }
+    mainInput.addEventListener('input', () => {
+        if (isLoginMode) return;
+        clearTimeout(userTimer);
+        setStatus(usernameStatus, '', mainInput.value.trim() ? 'Checking...' : '');
+        userTimer = setTimeout(runUsernameCheck, 450);
+    });
+    emailInput.addEventListener('input', () => {
+        if (isLoginMode) return;
+        clearTimeout(emailTimer);
+        emailTimer = setTimeout(runEmailCheck, 600);
+    });
 
-            button.className = 'toggle-action';
-            button.type = 'button';
-        });
+    // ===== Submit =====
+    authForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        if (busy) return;
+        errorMsg.style.display = 'none';
 
-        // Username availability check (only if the backend exposes this endpoint).
-        let availabilityRequest = 0;
-        usernameInput.addEventListener('input', async () => {
-            const val = usernameInput.value.trim();
-            const requestId = ++availabilityRequest;
+        const answer = parseInt(captchaInput.value.trim(), 10);
+        if (isNaN(answer) || answer !== correctAnswer) { showError('Incorrect security answer. Please try again.'); return; }
 
-            if (val.length === 0 || isLoginMode) {
-                usernameInput.classList.remove('error', 'success');
-                usernameStatus.style.display = 'none';
-                usernameStatus.textContent = '';
-                return;
-            }
-
-            // Avoid treating an unavailable endpoint as proof that a username is free.
-            try {
-                const response = await fetch(`${API_BASE}/api/auth/check-username?username=${encodeURIComponent(val)}`, {
-                    headers: { 'Accept': 'application/json' }
-                });
-                if (requestId !== availabilityRequest) return;
-                if (!response.ok) throw new Error('Username availability check failed');
-
-                const data = await response.json();
-                const available = data.available === true;
-                usernameInput.classList.toggle('error', !available);
-                usernameInput.classList.toggle('success', available);
-                usernameStatus.textContent = available ? 'Username is available' : 'Username is already taken';
-                usernameStatus.className = `status-msg ${available ? 'success' : 'error'}`;
-            } catch (err) {
-                if (requestId !== availabilityRequest) return;
-                usernameInput.classList.remove('error', 'success');
-                usernameStatus.style.display = 'none';
-                console.warn('Username availability check unavailable:', err);
-            }
-        });
-
-        // Submit to the backend so account creation uses the same database and
-        // secure password/session handling as the rest of Starfall.
-        submitBtn.addEventListener('click', async (e) => {
-            e.preventDefault();
-            const usernameVal = usernameInput.value.trim();
-            const passwordVal = document.getElementById('password').value;
-            const emailVal = emailInput.value.trim();
-
-            if (!usernameVal || !passwordVal || (!isLoginMode && !emailVal)) {
-                alert('Please fill in all required fields');
-                return;
-            }
+        const password = passwordInput.value;
+        let result, redirecting = false;
+        busy = true;
+        submitBtn.disabled = true;
+        try {
             if (!isLoginMode) {
-                const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-                if (!emailRegex.test(emailVal)) {
-                    emailInput.classList.add('error');
-                    emailError.style.display = 'block';
-                    return;
-                }
-                emailInput.classList.remove('error');
-                emailError.style.display = 'none';
+                const username = mainInput.value.trim(), email = emailInput.value.trim().toLowerCase();
+                if (!username || !email || !password) { showError('Please fill in all fields.'); return; }
+                if (username.length < 3) { showError('Username must be at least 3 characters long.'); return; }
+                if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) { showError('Please enter a valid email address.'); return; }
+                if (!passwordOk(passwordChecks(password))) { showError('Your password is too weak. Meet every requirement shown under the password box.'); return; }
+                if (!$('age-checkbox').checked) { showError('You must confirm that you are at least 13 years old.'); return; }
+                $('loading-title').textContent = 'Creating your account…';
+                loading.classList.add('active');
+                submitBtn.textContent = 'Creating account…';
+                result = await api('/api/signup', { username, email, password, ageConfirmed: true });
+            } else {
+                const id = mainInput.value.trim();
+                if (!id || !password) { showError('Please fill in all fields.'); return; }
+                $('loading-title').textContent = 'Signing you in…';
+                loading.classList.add('active');
+                submitBtn.textContent = 'Logging in…';
+                result = await api('/api/login', { id, password });
             }
 
-            const endpoint = isLoginMode ? '/api/auth/login' : '/api/auth/register';
-            const payload = isLoginMode
-                ? { username: usernameVal, password: passwordVal }
-                : { username: usernameVal, email: emailVal, password: passwordVal };
-
-            submitBtn.disabled = true;
-            const originalText = submitBtn.textContent;
-            submitBtn.textContent = isLoginMode ? 'Logging in…' : 'Creating account…';
-
-            try {
-                const response = await fetch(`${API_BASE}${endpoint}`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Accept': 'application/json'
-                    },
-                    body: JSON.stringify(payload)
-                });
-                const rawText = await response.text();
-                let data = {};
-                try { data = JSON.parse(rawText); } catch (_) {}
-
-                if (!response.ok) {
-                    // DEBUG: показываем технические детали (удобно на телефоне)
-                    alert(
-                        'DEBUG\n' +
-                        'URL: ' + response.url + '\n' +
-                        'Status: ' + response.status + '\n' +
-                        'Content-Type: ' + (response.headers.get('content-type') || '-') + '\n' +
-                        'Body: ' + rawText.slice(0, 300)
-                    );
-                    if (response.status === 409) {
-                        alert(data.error || 'Username already exists');
-                    } else if (response.status === 400) {
-                        alert(data.error || 'Please check the information you entered');
-                    } else if (response.status === 404) {
-                        alert('The authentication endpoint is not configured on the Starfall server yet. Account creation cannot work until the backend register/login routes are added.');
-                    } else {
-                        alert(data.error || (isLoginMode ? 'Login failed' : 'Registration failed'));
-                    }
-                    return;
+            if (!result.ok) {
+                loading.classList.remove('active');
+                let msg = result.data.error || 'Something went wrong. Try again.';
+                if (result.status === 401 && isLoginMode && Number.isInteger(result.data.attemptsLeft)) {
+                    const n = result.data.attemptsLeft;
+                    msg += ' ' + n + ' more wrong ' + (n === 1 ? 'try' : 'tries') + ' and sign-in is locked for 3 hours.';
                 }
-
-                if (data.success === false) {
-                    alert(data.error || (isLoginMode ? 'Login failed' : 'Registration failed'));
-                    return;
-                }
-
-                window.location.href = 'starfall.html';
-            } catch (err) {
-                console.error('Authentication request failed:', err);
-                // DEBUG
-                alert('DEBUG network error\nURL: ' + API_BASE + endpoint + '\npage: ' + location.href + '\n' + (err && err.message ? err.message : err));
-            } finally {
+                showError(msg);
+                return;
+            }
+            // save the session token (only sent for pages on another site) before leaving the page
+            try { if (result.data.token) localStorage.setItem(TOKEN_KEY, result.data.token); } catch (err) {}
+            redirecting = true;
+            submitBtn.textContent = 'Opening Starfall…';
+            window.location.href = 'starfall.html';
+        } catch (err) {
+            loading.classList.remove('active');
+            showError('Could not reach the server. Please try again.');
+        } finally {
+            busy = false;
+            if (!redirecting) {
+                loading.classList.remove('active');
                 submitBtn.disabled = false;
-                submitBtn.textContent = originalText;
+                submitBtn.textContent = isLoginMode ? 'Log In' : 'Sign Up';
             }
-        });
-    </script>
+        }
+    });
+})();
+</script>
 </body>
 </html>

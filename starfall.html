@@ -1,29 +1,59 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Starfall</title>
     <style>
+        html { visibility: hidden; } /* revealed once the login has been checked */
         body {
-            background-color: #18181f; /* Указанный цвет фона */
-            color: #ffffff;             /* Белый цвет текста */
+            background-color: #18181f;
+            color: #ffffff;
             font-family: Arial, sans-serif;
             display: flex;
+            flex-direction: column;
             justify-content: center;
             align-items: center;
             height: 100vh;
             margin: 0;
         }
-        h1 {
-            font-size: 3rem;
-            letter-spacing: 2px;
+        h1 { font-size: 3rem; letter-spacing: 2px; margin: 0 0 12px; }
+        #who { color: #b3b3b9; margin-bottom: 18px; min-height: 1.2em; }
+        #logout {
+            background: #3b3bf9; color: #fff; border: 0; border-radius: 6px;
+            padding: 10px 22px; font-size: 1rem; font-weight: bold; cursor: pointer;
         }
+        #logout:hover { background: #3131d9; }
     </style>
 </head>
 <body>
-
     <h1>Starfall</h1>
+    <div id="who"></div>
+    <button id="logout" type="button">Log out</button>
 
+<script>
+(async function () {
+    const RENDER_API = 'https://starfall-rejh.onrender.com';
+    const API_BASE = (location.hostname.endsWith('.onrender.com') || location.hostname === 'localhost' || location.hostname === '127.0.0.1') ? '' : RENDER_API;
+    const TOKEN_KEY = 'sf_token';
+    const getToken = () => { try { return localStorage.getItem(TOKEN_KEY) || ''; } catch (e) { return ''; } };
+    const headers = () => { const t = getToken(); return t ? { 'X-Session': t, 'Accept': 'application/json' } : { 'Accept': 'application/json' }; };
+    const reveal = () => { document.documentElement.style.visibility = 'visible'; };
+
+    document.getElementById('logout').addEventListener('click', async () => {
+        try { await fetch(API_BASE + '/api/logout', { method: 'POST', headers: headers() }); } catch (e) {}
+        try { localStorage.removeItem(TOKEN_KEY); } catch (e) {}
+        location.replace('login.html');
+    });
+
+    try {
+        const r = await fetch(API_BASE + '/api/me', { headers: headers(), cache: 'no-store' });
+        if (r.status === 401) { try { localStorage.removeItem(TOKEN_KEY); } catch (e) {} location.replace('login.html'); return; }
+        const d = await r.json().catch(() => ({}));
+        if (d.username) document.getElementById('who').textContent = 'Signed in as ' + d.username;
+    } catch (e) { /* server unreachable: show the page instead of bouncing the user */ }
+    reveal();
+})();
+</script>
 </body>
 </html>
