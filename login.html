@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script>if (/(^|\.)github\.io$/i.test(location.hostname)) location.replace('https://starfall-rejh.onrender.com/');</script>
     <title>Starfall</title>
     <style>
         * { box-sizing: border-box; }
@@ -190,7 +191,7 @@
 
     // ===== API helper =====
     // Served by the backend on the same origin; sessions stay in HttpOnly cookies.
-    const API_BASE = '';
+    const API_BASE = 'https://starfall-rejh.onrender.com';
 
     async function api(path, body) {
         const headers = { 'Accept': 'application/json' };
@@ -201,7 +202,7 @@
             opts.body = JSON.stringify(body);
         }
         try {
-            opts.credentials = 'same-origin';
+            opts.credentials = 'include';
             const r = await fetch(API_BASE + path, opts);
             let data = {};
             try { data = await r.json(); } catch (e) {}

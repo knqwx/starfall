@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script>if (/(^|\.)github\.io$/i.test(location.hostname)) location.replace('https://starfall-rejh.onrender.com/starfall.html');</script>
     <title>Starfall</title>
     <style>
         * { box-sizing: border-box; }
@@ -199,7 +200,7 @@
 (async function () {
     const $ = (id) => document.getElementById(id);
     // Served by the backend on the same origin; authentication stays in HttpOnly cookies.
-    const API_BASE = '';
+    const API_BASE = 'https://starfall-rejh.onrender.com';
     const headers = () => ({ 'Accept': 'application/json' });
     const goLogin = () => location.replace('login.html');
     const fmtDate = (ms) => ms ? new Date(ms).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : '-';
@@ -246,7 +247,7 @@
         if (newPassword !== confirmPassword) { msg.textContent = 'New passwords do not match.'; msg.style.color = '#ff6b6b'; return; }
         button.disabled = true; button.textContent = 'Changing...';
         try {
-            const r = await fetch(API_BASE + '/api/change-password', { method: 'POST', credentials: 'same-origin', headers: { ...headers(), 'Content-Type': 'application/json' }, body: JSON.stringify({ currentPassword, newPassword, confirmPassword }) });
+            const r = await fetch(API_BASE + '/api/change-password', { method: 'POST', credentials: 'include', headers: { ...headers(), 'Content-Type': 'application/json' }, body: JSON.stringify({ currentPassword, newPassword, confirmPassword }) });
             const d = await r.json().catch(() => ({}));
             if (!r.ok) { msg.textContent = d.error || 'Could not change password.'; msg.style.color = '#ff6b6b'; return; }
             $('current-password').value = ''; $('new-password').value = ''; $('confirm-password').value = '';
@@ -256,7 +257,7 @@
     });
     $('logout-btn').addEventListener('click', async () => {
         $('logout-btn').disabled = true;
-        try { await fetch(API_BASE + '/api/logout', { method: 'POST', credentials: 'same-origin', headers: headers() }); } catch (e) {}
+        try { await fetch(API_BASE + '/api/logout', { method: 'POST', credentials: 'include', headers: headers() }); } catch (e) {}
         goLogin();
     });
 
@@ -286,7 +287,7 @@
         $('users-body').textContent = '';
         $('users-count').textContent = '';
         try {
-            const r = await fetch(API_BASE + '/api/admin/users', { credentials: 'same-origin', headers: headers(), cache: 'no-store' });
+            const r = await fetch(API_BASE + '/api/admin/users', { credentials: 'include', headers: headers(), cache: 'no-store' });
             if (r.status === 401) return goLogin();
             const d = await r.json().catch(() => ({}));
             if (!r.ok) { $('users-msg').className = 'msg err'; $('users-msg').textContent = d.error || 'Could not load users.'; return; }
@@ -311,7 +312,7 @@
         setDetailMsg('Loading...');
         open('detail-overlay');
         try {
-            const r = await fetch(API_BASE + '/api/admin/users/' + encodeURIComponent(id), { credentials: 'same-origin', headers: headers(), cache: 'no-store' });
+            const r = await fetch(API_BASE + '/api/admin/users/' + encodeURIComponent(id), { credentials: 'include', headers: headers(), cache: 'no-store' });
             if (r.status === 401) return goLogin();
             const d = await r.json().catch(() => ({}));
             if (!r.ok) { setDetailMsg(d.error || 'Could not load this profile.', true); return; }
@@ -342,7 +343,7 @@
         if (!detail || $('d-confirm-input').value !== detail.username) return;
         $('d-confirm-btn').disabled = true;
         try {
-            const r = await fetch(API_BASE + '/api/admin/users/' + encodeURIComponent(detail.id), { method: 'DELETE', credentials: 'same-origin', headers: headers() });
+            const r = await fetch(API_BASE + '/api/admin/users/' + encodeURIComponent(detail.id), { method: 'DELETE', credentials: 'include', headers: headers() });
             if (r.status === 401) return goLogin();
             const d = await r.json().catch(() => ({}));
             if (!r.ok) { $('d-confirm-btn').disabled = false; setDetailMsg(d.error || 'Could not delete this account.', true); return; }
@@ -355,7 +356,7 @@
 
     // ----- who is logged in -----
     try {
-        const r = await fetch(API_BASE + '/api/me', { credentials: 'same-origin', headers: headers(), cache: 'no-store' });
+        const r = await fetch(API_BASE + '/api/me', { credentials: 'include', headers: headers(), cache: 'no-store' });
         if (r.status === 401) return goLogin();
         if (!r.ok) throw new Error('Profile request failed (HTTP ' + r.status + '). Open Starfall from the same website address you used to log in.');
         const d = await r.json();

@@ -40,7 +40,7 @@ async function initDB() {
         }
     };
     await run(`CREATE TABLE IF NOT EXISTS users (
-        id TEXT PRIMARY KEY,
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
         username TEXT UNIQUE NOT NULL,
         email TEXT,
         password TEXT NOT NULL,
@@ -51,21 +51,38 @@ async function initDB() {
     )`);
     for (const col of ['passwordHash TEXT', 'joinedAt INTEGER', 'lastIp TEXT', 'avatarColor TEXT']) await run(`ALTER TABLE users ADD COLUMN ${col}`);
 
-    // Migrate any legacy non-TEXT primary-key IDs to TEXT so IDs may contain letters.
+    // Account IDs are positive, sequential integers. Convert legacy text/random IDs once,
+    // preserving user data and remapping valid sessions to the new numeric IDs.
     const userInfo = await db.execute('PRAGMA table_info(users)');
     const idColumn = userInfo.rows.find((c) => String(c.name) === 'id');
-    if (idColumn && String(idColumn.type || '').trim().toUpperCase() !== 'TEXT') {
-        // Rebuild any non-TEXT ID schema (including INTEGER PRIMARY KEY/AUTOINCREMENT).
-        // Dropping a stale temp table also recovers cleanly from an interrupted prior migration.
-        await db.batch([
-            { sql: 'DROP TABLE IF EXISTS users_text_migration', args: [] },
-            { sql: `CREATE TABLE users_text_migration (id TEXT PRIMARY KEY, username TEXT UNIQUE NOT NULL, email TEXT, password TEXT NOT NULL, passwordHash TEXT, joinedAt INTEGER, lastIp TEXT, avatarColor TEXT)`, args: [] },
-            { sql: `INSERT INTO users_text_migration (id, username, email, password, passwordHash, joinedAt, lastIp, avatarColor) SELECT CAST(id AS TEXT), username, email, password, passwordHash, joinedAt, lastIp, avatarColor FROM users`, args: [] },
-            { sql: 'DROP TABLE users', args: [] },
-            { sql: 'ALTER TABLE users_text_migration RENAME TO users', args: [] }
-        ], 'write');
+    if (idColumn && String(idColumn.type || '').trim().toUpperCase() !== 'INTEGER') {
+        const usersResult = await db.execute('SELECT id, username, email, password, passwordHash, joinedAt, lastIp, avatarColor FROM users ORDER BY COALESCE(joinedAt, 0), username COLLATE NOCASE, CAST(id AS TEXT)');
+        const users = usersResult.rows;
+        const tableExists = await db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='sessions'");
+        const oldSessions = tableExists.rows.length
+            ? (await db.execute('SELECT id, userId, createdAt, expiresAt FROM sessions')).rows
+            : [];
+        const idMap = new Map(users.map((u, i) => [String(u.id), String(i + 1)]));
+        const statements = [
+            { sql: 'DROP TABLE IF EXISTS users_numeric_migration', args: [] },
+            { sql: 'CREATE TABLE users_numeric_migration (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE NOT NULL, email TEXT, password TEXT NOT NULL, passwordHash TEXT, joinedAt INTEGER, lastIp TEXT, avatarColor TEXT)', args: [] }
+        ];
+        for (let i = 0; i < users.length; i++) {
+            const u = users[i];
+            statements.push({ sql: 'INSERT INTO users_numeric_migration (id, username, email, password, passwordHash, joinedAt, lastIp, avatarColor) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', args: [i + 1, u.username, u.email ?? null, u.password ?? '', u.passwordHash ?? null, u.joinedAt ?? null, u.lastIp ?? null, u.avatarColor ?? null] });
+        }
+        if (tableExists.rows.length) statements.push({ sql: 'DROP TABLE sessions', args: [] });
+        statements.push({ sql: 'DROP TABLE users', args: [] }, { sql: 'ALTER TABLE users_numeric_migration RENAME TO users', args: [] });
+        if (tableExists.rows.length) {
+            statements.push({ sql: 'CREATE TABLE sessions (id TEXT PRIMARY KEY, userId INTEGER NOT NULL, createdAt INTEGER, expiresAt INTEGER)', args: [] });
+            for (const sess of oldSessions) {
+                const mapped = idMap.get(String(sess.userId));
+                if (mapped) statements.push({ sql: 'INSERT OR IGNORE INTO sessions (id, userId, createdAt, expiresAt) VALUES (?, ?, ?, ?)', args: [String(sess.id), Number(mapped), sess.createdAt ?? null, sess.expiresAt ?? null] });
+            }
+        }
+        await db.batch(statements, 'write');
     }
-    await run(`CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, userId TEXT NOT NULL, createdAt INTEGER, expiresAt INTEGER)`);
+    await run(`CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, userId INTEGER NOT NULL, createdAt INTEGER, expiresAt INTEGER)`);
     const sessionInfo = await db.execute('PRAGMA table_info(sessions)');
     const sessionUserId = sessionInfo.rows.find((c) => String(c.name) === 'userId');
     const sessionForeignKeys = await db.execute('PRAGMA foreign_key_list(sessions)');
@@ -77,14 +94,14 @@ async function initDB() {
     // strict/foreign-key constraints. Rebuild without legacy constraints so text IDs
     // are valid, preserving all session rows.
     const rebuildSessions = !sessionUserId
-        || String(sessionUserId.type || '').trim().toUpperCase() !== 'TEXT'
+        || String(sessionUserId.type || '').trim().toUpperCase() !== 'INTEGER'
         || sessionForeignKeys.rows.length > 0
         || sessionSql.includes('STRICT');
     if (rebuildSessions) {
         await db.batch([
             { sql: 'DROP TABLE IF EXISTS sessions_text_migration', args: [] },
-            { sql: 'CREATE TABLE sessions_text_migration (id TEXT PRIMARY KEY, userId TEXT NOT NULL, createdAt INTEGER, expiresAt INTEGER)', args: [] },
-            { sql: 'INSERT INTO sessions_text_migration (id, userId, createdAt, expiresAt) SELECT CAST(id AS TEXT), CAST(userId AS TEXT), createdAt, expiresAt FROM sessions', args: [] },
+            { sql: 'CREATE TABLE sessions_text_migration (id TEXT PRIMARY KEY, userId INTEGER NOT NULL, createdAt INTEGER, expiresAt INTEGER)', args: [] },
+            { sql: 'INSERT INTO sessions_text_migration (id, userId, createdAt, expiresAt) SELECT CAST(id AS TEXT), CAST(userId AS INTEGER), createdAt, expiresAt FROM sessions WHERE CAST(userId AS INTEGER) > 0', args: [] },
             { sql: 'DROP TABLE sessions', args: [] },
             { sql: 'ALTER TABLE sessions_text_migration RENAME TO sessions', args: [] }
         ], 'write');
@@ -145,7 +162,7 @@ function parseCookies(req) {
 }
 function setCookie(res, name, value, maxAgeMs) {
     const secure = IS_SECURE ? '; Secure' : '';
-    res.append('Set-Cookie', `${name}=${encodeURIComponent(value)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.floor(maxAgeMs / 1000)}${secure}`);
+    res.append('Set-Cookie', `${name}=${encodeURIComponent(value)}; Path=/; HttpOnly; SameSite=${IS_SECURE ? 'None' : 'Lax'}; Max-Age=${Math.floor(maxAgeMs / 1000)}${secure}`);
 }
 const clearCookie = (res, name) => setCookie(res, name, '', 0);
 
@@ -166,23 +183,38 @@ async function limited(key, max, windowMs) {
     return Number(result.rows[0]?.hits || 0) > max;
 }
 
-// Same-origin only: the frontend and cookie-authenticated API are served together.
+// Permit the GitHub Pages frontend to call this API without redirecting the user.
+// Credentialed CORS is restricted to exact, explicitly trusted origins.
+const trustedFrontendOrigins = new Set([
+    'https://knqwix.github.io',
+    'https://knqwx.github.io',
+    ...String(process.env.ALLOWED_ORIGINS || '').split(',').map((v) => v.trim()).filter(Boolean)
+]);
 app.use((req, res, next) => {
-    const origin = req.headers.origin;
-    const fetchSite = String(req.headers['sec-fetch-site'] || '').toLowerCase();
-    if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method) && fetchSite === 'cross-site') return res.status(403).json({ error: 'Request blocked.' });
-    if (req.method === 'OPTIONS') {
-        if (!origin) return res.sendStatus(204);
+    const origin = String(req.headers.origin || '');
+    let isSameOrigin = false;
+    if (origin) {
         try {
             const u = new URL(origin);
-            if (u.host === req.headers.host && u.protocol === (req.secure ? 'https:' : 'http:')) return res.sendStatus(204);
-        } catch (e) {}
-        return res.status(403).json({ error: 'Request blocked.' });
+            isSameOrigin = u.host === req.get('host') && u.protocol === `${req.protocol}:`;
+            if (!isSameOrigin && !trustedFrontendOrigins.has(origin)) return res.status(403).json({ error: 'Request blocked.' });
+        } catch (_) { return res.status(403).json({ error: 'Request blocked.' }); }
+        if (!isSameOrigin && trustedFrontendOrigins.has(origin)) {
+            res.setHeader('Access-Control-Allow-Origin', origin);
+            res.setHeader('Access-Control-Allow-Credentials', 'true');
+            res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
+            res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Accept');
+            res.setHeader('Vary', 'Origin');
+        }
     }
-    if (origin && req.method !== 'GET' && req.method !== 'HEAD') {
-        let sameOrigin = false;
-        try { const u = new URL(origin); sameOrigin = u.host === req.headers.host && u.protocol === (req.secure ? 'https:' : 'http:'); } catch (e) {}
-        if (!sameOrigin) return res.status(403).json({ error: 'Request blocked.' });
+    if (req.method === 'OPTIONS') {
+        if (!origin || (!trustedFrontendOrigins.has(origin) && origin !== `https://${req.get('host')}`)) return res.sendStatus(403);
+        return res.sendStatus(204);
+    }
+    if (!['GET', 'HEAD'].includes(req.method)
+        && String(req.headers['sec-fetch-site'] || '').toLowerCase() === 'cross-site'
+        && !trustedFrontendOrigins.has(origin)) {
+        return res.status(403).json({ error: 'Request blocked.' });
     }
     next();
 });
@@ -191,7 +223,7 @@ app.use((req, res, next) => {
     const nonce = crypto.randomBytes(18).toString('base64');
     res.locals.cspNonce = nonce;
     if (IS_SECURE) res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
-    res.setHeader('Content-Security-Policy', `default-src 'self'; script-src 'self' 'nonce-${nonce}'; style-src 'self' 'nonce-${nonce}'; style-src-attr 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'`);
+    res.setHeader('Content-Security-Policy', `default-src 'self'; script-src 'self' 'nonce-${nonce}'; style-src 'self' 'nonce-${nonce}'; style-src-attr 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://starfall-rejh.onrender.com; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'`);
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'same-origin');
     res.setHeader('X-Frame-Options', 'DENY');
@@ -426,13 +458,13 @@ app.post('/api/signup', route(async (req, res) => {
         if ((await db.execute({ sql: 'SELECT 1 FROM users WHERE lower(email) = ? LIMIT 1', args: [email] })).rows.length) return fail('We could not create an account with these details. Check them and try again, or log in if you already have an account.');
 
         const hash = await hashPassword(password);
-        let newId = crypto.randomBytes(16).toString('hex');
-        while ((await db.execute({ sql: 'SELECT 1 FROM users WHERE id = ?', args: [newId] })).rows.length) newId = crypto.randomBytes(16).toString('hex');
+        let newId;
         try {
-            await db.execute({
-                sql: "INSERT INTO users (id, username, email, password, passwordHash, lastIp, joinedAt, avatarColor) VALUES (?, ?, ?, '', ?, ?, ?, ?)",
-                args: [newId, username, email, hash, hashIp(ip), now, randomAvatarColor()]
+            const inserted = await db.execute({
+                sql: "INSERT INTO users (username, email, password, passwordHash, lastIp, joinedAt, avatarColor) VALUES (?, ?, '', ?, ?, ?, ?)",
+                args: [username, email, hash, hashIp(ip), now, randomAvatarColor()]
             });
+            newId = String(inserted.lastInsertRowid);
         } catch (e) {
             if (String(e.message || e).toUpperCase().includes('UNIQUE')) return fail('This username is already taken.');
             throw e;
@@ -493,7 +525,8 @@ app.post('/api/logout', route(async (req, res) => {
 
 const parseUserId = (s) => {
     const value = String(s == null ? '' : s).trim();
-    return /^[A-Za-z0-9_-]{1,32}$/.test(value) ? value : '';
+    if (!/^[1-9][0-9]{0,18}$/.test(value)) return '';
+    try { return BigInt(value) <= 9223372036854775807n ? value : ''; } catch (_) { return ''; }
 };
 
 // One account's profile, as seen by the admin.
