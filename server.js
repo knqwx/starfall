@@ -48,11 +48,11 @@ async function initDB() {
         // Rebuild any non-TEXT ID schema (including INTEGER PRIMARY KEY/AUTOINCREMENT).
         // Dropping a stale temp table also recovers cleanly from an interrupted prior migration.
         await db.batch([
-            { sql: 'DROP TABLE IF EXISTS users_text_migration' },
-            { sql: `CREATE TABLE users_text_migration (id TEXT PRIMARY KEY, username TEXT UNIQUE NOT NULL, email TEXT, password TEXT NOT NULL, passwordHash TEXT, joinedAt INTEGER, lastIp TEXT, avatarColor TEXT)` },
-            { sql: `INSERT INTO users_text_migration (id, username, email, password, passwordHash, joinedAt, lastIp, avatarColor) SELECT CAST(id AS TEXT), username, email, password, passwordHash, joinedAt, lastIp, avatarColor FROM users` },
-            { sql: 'DROP TABLE users' },
-            { sql: 'ALTER TABLE users_text_migration RENAME TO users' }
+            { sql: 'DROP TABLE IF EXISTS users_text_migration', args: [] },
+            { sql: `CREATE TABLE users_text_migration (id TEXT PRIMARY KEY, username TEXT UNIQUE NOT NULL, email TEXT, password TEXT NOT NULL, passwordHash TEXT, joinedAt INTEGER, lastIp TEXT, avatarColor TEXT)`, args: [] },
+            { sql: `INSERT INTO users_text_migration (id, username, email, password, passwordHash, joinedAt, lastIp, avatarColor) SELECT CAST(id AS TEXT), username, email, password, passwordHash, joinedAt, lastIp, avatarColor FROM users`, args: [] },
+            { sql: 'DROP TABLE users', args: [] },
+            { sql: 'ALTER TABLE users_text_migration RENAME TO users', args: [] }
         ], 'write');
     }
     await run(`CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, userId TEXT NOT NULL, createdAt INTEGER, expiresAt INTEGER)`);
@@ -60,10 +60,11 @@ async function initDB() {
     const sessionUserId = sessionInfo.rows.find((c) => String(c.name) === 'userId');
     if (sessionUserId && String(sessionUserId.type || '').toUpperCase() !== 'TEXT') {
         await db.batch([
-            { sql: `CREATE TABLE sessions_text_migration (id TEXT PRIMARY KEY, userId TEXT NOT NULL, createdAt INTEGER, expiresAt INTEGER)` },
-            { sql: `INSERT INTO sessions_text_migration (id, userId, createdAt, expiresAt) SELECT id, CAST(userId AS TEXT), createdAt, expiresAt FROM sessions` },
-            { sql: 'DROP TABLE sessions' },
-            { sql: 'ALTER TABLE sessions_text_migration RENAME TO sessions' }
+            { sql: 'DROP TABLE IF EXISTS sessions_text_migration', args: [] },
+            { sql: `CREATE TABLE sessions_text_migration (id TEXT PRIMARY KEY, userId TEXT NOT NULL, createdAt INTEGER, expiresAt INTEGER)`, args: [] },
+            { sql: `INSERT INTO sessions_text_migration (id, userId, createdAt, expiresAt) SELECT id, CAST(userId AS TEXT), createdAt, expiresAt FROM sessions`, args: [] },
+            { sql: 'DROP TABLE sessions', args: [] },
+            { sql: 'ALTER TABLE sessions_text_migration RENAME TO sessions', args: [] }
         ], 'write');
     }
     // Account ID changes are consent-based through /api/claim-knqw-id; do not rewrite IDs on startup.
@@ -547,5 +548,8 @@ app.use((err, req, res, next) => {
 });
 
 initDB()
-    .catch((err) => console.error('Database initialization error:', err))
-    .finally(() => app.listen(PORT, () => console.log(`Server is running on port ${PORT}`)));
+    .then(() => app.listen(PORT, () => console.log(`Server is running on port ${PORT}`)))
+    .catch((err) => {
+        console.error('Database initialization failed; refusing to start with an unusable database:', err);
+        process.exit(1);
+    });
