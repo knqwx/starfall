@@ -1,6 +1,7 @@
 // Starfall backend: signup, login, sessions (ported from the Unique Trading auth system).
 // Env vars (Render -> Environment):
 //   TURSO_URL, TURSO_TOKEN        database
+//   IP_HASH_SECRET                optional stable secret for keyed IP hashes (defaults to TURSO_TOKEN)
 //   SIGNUP_COOLDOWN=0             optional, turns off the "one account per day" rule (useful while testing)
 //   SKIP_DNS=1                    optional, skips the e-mail domain DNS check
 const express = require('express');
@@ -12,6 +13,8 @@ const { createClient } = require('@libsql/client');
 
 const cleanEnv = (v) => String(v || '').trim().replace(/^["']+|["']+$/g, '').trim();
 const TURSO_TOKEN = cleanEnv(process.env.TURSO_TOKEN);
+// Keep IP-derived database keys stable across restarts without storing raw addresses.
+const IP_HASH_KEY = cleanEnv(process.env.IP_HASH_SECRET) || TURSO_TOKEN;
 const db = createClient({ url: cleanEnv(process.env.TURSO_URL), authToken: TURSO_TOKEN || undefined });
 
 const app = express();
@@ -94,6 +97,17 @@ async function initDB() {
     await run(`CREATE INDEX IF NOT EXISTS signup_log_ip_created ON signup_log (ip, createdAt)`);
     await run(`CREATE INDEX IF NOT EXISTS sessions_user ON sessions (userId)`);
     await db.execute('CREATE UNIQUE INDEX IF NOT EXISTS users_username_nocase ON users (username COLLATE NOCASE)');
+    // Convert legacy raw IP addresses to keyed hashes once; cooldown logic only needs equality checks.
+    const legacySignupIps = await db.execute('SELECT id, ip FROM signup_log WHERE ip IS NOT NULL');
+    for (const row of legacySignupIps.rows) {
+        const value = String(row.ip || '');
+        if (value && !/^[a-f0-9]{64}$/i.test(value)) await db.execute({ sql: 'UPDATE signup_log SET ip = ? WHERE id = ?', args: [hashIp(value), row.id] });
+    }
+    const legacyUserIps = await db.execute('SELECT id, lastIp FROM users WHERE lastIp IS NOT NULL');
+    for (const row of legacyUserIps.rows) {
+        const value = String(row.lastIp || '');
+        if (value && !/^[a-f0-9]{64}$/i.test(value)) await db.execute({ sql: 'UPDATE users SET lastIp = ? WHERE id = ?', args: [hashIp(value), String(row.id)] });
+    }
     await db.execute({ sql: 'DELETE FROM sessions WHERE expiresAt < ?', args: [Date.now()] });
     // Signup IP records are only needed for the one-day cooldown. Keep a small buffer.
     await db.execute({ sql: 'DELETE FROM signup_log WHERE createdAt < ?', args: [Date.now() - 2 * DAY] });
@@ -112,6 +126,7 @@ setInterval(() => {
 // ---------- small helpers ----------
 const route = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);   // Express 4 does not catch async errors
 const sha256 = (v) => crypto.createHash('sha256').update(String(v)).digest('hex');
+const hashIp = (ip) => ip ? crypto.createHmac('sha256', IP_HASH_KEY || TURSO_TOKEN || 'starfall-ip-fallback').update(String(ip)).digest('hex') : null;
 const safeEqual = (a, b) => crypto.timingSafeEqual(crypto.createHash('sha256').update(String(a)).digest(), crypto.createHash('sha256').update(String(b)).digest());
 const ipOf = (req) => {
     const ip = String(req.ip || '').trim().replace(/^::ffff:/i, '').toLowerCase();
@@ -139,7 +154,7 @@ const clearCookie = (res, name) => setCookie(res, name, '', 0);
 async function limited(key, max, windowMs) {
     const now = Date.now();
     const windowStart = Math.floor(now / windowMs) * windowMs;
-    const storageKey = sha256(key);
+    const storageKey = crypto.createHmac('sha256', IP_HASH_KEY || TURSO_TOKEN || 'starfall-ip-fallback').update(String(key)).digest('hex');
     await db.execute({
         sql: `INSERT INTO request_limits (k, windowStart, hits) VALUES (?, ?, 1)
               ON CONFLICT(k) DO UPDATE SET
@@ -154,6 +169,8 @@ async function limited(key, max, windowMs) {
 // Same-origin only: the frontend and cookie-authenticated API are served together.
 app.use((req, res, next) => {
     const origin = req.headers.origin;
+    const fetchSite = String(req.headers['sec-fetch-site'] || '').toLowerCase();
+    if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method) && fetchSite === 'cross-site') return res.status(403).json({ error: 'Request blocked.' });
     if (req.method === 'OPTIONS') {
         if (!origin) return res.sendStatus(204);
         try {
@@ -174,10 +191,13 @@ app.use((req, res, next) => {
     const nonce = crypto.randomBytes(18).toString('base64');
     res.locals.cspNonce = nonce;
     if (IS_SECURE) res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
-    res.setHeader('Content-Security-Policy', `default-src 'self'; script-src 'self' 'nonce-${nonce}'; style-src 'self'; img-src 'self' data: https:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'`);
+    res.setHeader('Content-Security-Policy', `default-src 'self'; script-src 'self' 'nonce-${nonce}'; style-src 'self' 'nonce-${nonce}'; style-src-attr 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'`);
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'same-origin');
     res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+    res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+    res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
     if (req.path.startsWith('/api/')) res.setHeader('Cache-Control', 'no-store');
     next();
 });
@@ -387,10 +407,11 @@ app.post('/api/signup', route(async (req, res) => {
             const devLast = Number(parseCookies(req).ut_su) || 0;
             if (devLast && now - devLast < DAY) wait = Math.max(wait, DAY - (now - devLast));
             if (ip) {
-                const a = await db.execute({ sql: 'SELECT MAX(createdAt) AS t FROM signup_log WHERE ip = ?', args: [ip] });
+                const ipKey = hashIp(ip);
+                const a = await db.execute({ sql: 'SELECT MAX(createdAt) AS t FROM signup_log WHERE ip = ?', args: [ipKey] });
                 const t1 = Number(a.rows[0] && a.rows[0].t) || 0;
                 if (t1 && now - t1 < DAY) wait = Math.max(wait, DAY - (now - t1));
-                const c = await db.execute({ sql: 'SELECT MAX(joinedAt) AS t FROM users WHERE lastIp = ?', args: [ip] });
+                const c = await db.execute({ sql: 'SELECT MAX(joinedAt) AS t FROM users WHERE lastIp = ?', args: [ipKey] });
                 const t2 = Number(c.rows[0] && c.rows[0].t) || 0;
                 if (t2 && now - t2 < DAY) wait = Math.max(wait, DAY - (now - t2));
             }
@@ -405,18 +426,18 @@ app.post('/api/signup', route(async (req, res) => {
         if ((await db.execute({ sql: 'SELECT 1 FROM users WHERE lower(email) = ? LIMIT 1', args: [email] })).rows.length) return fail('We could not create an account with these details. Check them and try again, or log in if you already have an account.');
 
         const hash = await hashPassword(password);
-        let newId = String(Date.now()) + String(crypto.randomInt(100, 1000));
-        while ((await db.execute({ sql: 'SELECT 1 FROM users WHERE id = ?', args: [newId] })).rows.length) newId = String(Date.now()) + String(crypto.randomInt(100, 1000));
+        let newId = crypto.randomBytes(16).toString('hex');
+        while ((await db.execute({ sql: 'SELECT 1 FROM users WHERE id = ?', args: [newId] })).rows.length) newId = crypto.randomBytes(16).toString('hex');
         try {
             await db.execute({
                 sql: "INSERT INTO users (id, username, email, password, passwordHash, lastIp, joinedAt, avatarColor) VALUES (?, ?, ?, '', ?, ?, ?, ?)",
-                args: [newId, username, email, hash, ip || null, now, randomAvatarColor()]
+                args: [newId, username, email, hash, hashIp(ip), now, randomAvatarColor()]
             });
         } catch (e) {
             if (String(e.message || e).toUpperCase().includes('UNIQUE')) return fail('This username is already taken.');
             throw e;
         }
-        if (ip) await db.execute({ sql: 'INSERT INTO signup_log (ip, createdAt) VALUES (?, ?)', args: [ip, now] });
+        if (ip) await db.execute({ sql: 'INSERT INTO signup_log (ip, createdAt) VALUES (?, ?)', args: [hashIp(ip), now] });
         setCookie(res, 'ut_su', String(now), DAY);
         await startSession(res, newId);
         res.json({ username });
@@ -433,7 +454,7 @@ app.post('/api/login', route(async (req, res) => {
         const r = await authenticate(req, id, password);
         if (!r.user) return res.status(r.status).json(r.body);
         const u = r.user, ip = ipOf(req);
-        if (ip) { try { await db.execute({ sql: 'UPDATE users SET lastIp = ? WHERE id = ?', args: [ip, String(u.id)] }); } catch (e) {} }
+        if (ip) await db.execute({ sql: 'UPDATE users SET lastIp = ? WHERE id = ?', args: [hashIp(ip), String(u.id)] });
         await startSession(res, u.id);
         res.json({ username: String(u.username) });
     } catch (e) {
@@ -515,7 +536,7 @@ app.use('/assets', express.static(path.join(__dirname, 'assets'), { fallthrough:
 async function sendHtml(req, res, fileName) {
     const html = await fs.readFile(path.join(__dirname, fileName), 'utf8');
     const nonce = res.locals.cspNonce;
-    const secured = html.replace(/<script(\s|>)/gi, (m, after) => `<script nonce=\"${nonce}\"${after}`);
+    const secured = html.replace(/<(script|style)(\s|>)/gi, (m, tag, after) => `<${tag} nonce=\"${nonce}\"${after}`);
     res.setHeader('Cache-Control', 'no-store');
     res.type('html').send(secured);
 }

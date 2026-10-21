@@ -201,6 +201,7 @@
             opts.body = JSON.stringify(body);
         }
         try {
+            opts.credentials = 'same-origin';
             const r = await fetch(API_BASE + path, opts);
             let data = {};
             try { data = await r.json(); } catch (e) {}

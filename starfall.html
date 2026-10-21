@@ -246,7 +246,7 @@
         if (newPassword !== confirmPassword) { msg.textContent = 'New passwords do not match.'; msg.style.color = '#ff6b6b'; return; }
         button.disabled = true; button.textContent = 'Changing...';
         try {
-            const r = await fetch(API_BASE + '/api/change-password', { method: 'POST', headers: { ...headers(), 'Content-Type': 'application/json' }, body: JSON.stringify({ currentPassword, newPassword, confirmPassword }) });
+            const r = await fetch(API_BASE + '/api/change-password', { method: 'POST', credentials: 'same-origin', headers: { ...headers(), 'Content-Type': 'application/json' }, body: JSON.stringify({ currentPassword, newPassword, confirmPassword }) });
             const d = await r.json().catch(() => ({}));
             if (!r.ok) { msg.textContent = d.error || 'Could not change password.'; msg.style.color = '#ff6b6b'; return; }
             $('current-password').value = ''; $('new-password').value = ''; $('confirm-password').value = '';
@@ -256,7 +256,7 @@
     });
     $('logout-btn').addEventListener('click', async () => {
         $('logout-btn').disabled = true;
-        try { await fetch(API_BASE + '/api/logout', { method: 'POST', headers: headers() }); } catch (e) {}
+        try { await fetch(API_BASE + '/api/logout', { method: 'POST', credentials: 'same-origin', headers: headers() }); } catch (e) {}
         goLogin();
     });
 
@@ -286,7 +286,7 @@
         $('users-body').textContent = '';
         $('users-count').textContent = '';
         try {
-            const r = await fetch(API_BASE + '/api/admin/users', { headers: headers(), cache: 'no-store' });
+            const r = await fetch(API_BASE + '/api/admin/users', { credentials: 'same-origin', headers: headers(), cache: 'no-store' });
             if (r.status === 401) return goLogin();
             const d = await r.json().catch(() => ({}));
             if (!r.ok) { $('users-msg').className = 'msg err'; $('users-msg').textContent = d.error || 'Could not load users.'; return; }
@@ -311,7 +311,7 @@
         setDetailMsg('Loading...');
         open('detail-overlay');
         try {
-            const r = await fetch(API_BASE + '/api/admin/users/' + encodeURIComponent(id), { headers: headers(), cache: 'no-store' });
+            const r = await fetch(API_BASE + '/api/admin/users/' + encodeURIComponent(id), { credentials: 'same-origin', headers: headers(), cache: 'no-store' });
             if (r.status === 401) return goLogin();
             const d = await r.json().catch(() => ({}));
             if (!r.ok) { setDetailMsg(d.error || 'Could not load this profile.', true); return; }
@@ -342,7 +342,7 @@
         if (!detail || $('d-confirm-input').value !== detail.username) return;
         $('d-confirm-btn').disabled = true;
         try {
-            const r = await fetch(API_BASE + '/api/admin/users/' + encodeURIComponent(detail.id), { method: 'DELETE', headers: headers() });
+            const r = await fetch(API_BASE + '/api/admin/users/' + encodeURIComponent(detail.id), { method: 'DELETE', credentials: 'same-origin', headers: headers() });
             if (r.status === 401) return goLogin();
             const d = await r.json().catch(() => ({}));
             if (!r.ok) { $('d-confirm-btn').disabled = false; setDetailMsg(d.error || 'Could not delete this account.', true); return; }
@@ -355,20 +355,27 @@
 
     // ----- who is logged in -----
     try {
-        const r = await fetch(API_BASE + '/api/me', { headers: headers(), cache: 'no-store' });
+        const r = await fetch(API_BASE + '/api/me', { credentials: 'same-origin', headers: headers(), cache: 'no-store' });
         if (r.status === 401) return goLogin();
-        const d = await r.json().catch(() => ({}));
-        if (d.username) {
-            $('p-username').textContent = d.username;
-            $('p-id').textContent = d.id == null ? '-' : String(d.id);
-            $('p-email').textContent = d.email || '-';
-            $('p-joined').textContent = fmtDate(d.joinedAt);
-            $('profile-btn-name').textContent = d.username;
-            setAvatar($('profile-avatar'), d.username, d.avatarColor);
-            setAvatar($('p-avatar'), d.username, d.avatarColor);
-            $('users-btn').hidden = !d.isAdmin; // cosmetic only: /api/admin/users refuses everyone else
-        }
-    } catch (e) { /* server unreachable: show the page instead of bouncing the user */ }
+        if (!r.ok) throw new Error('Profile request failed (HTTP ' + r.status + '). Open Starfall from the same website address you used to log in.');
+        const d = await r.json();
+        if (!d || typeof d.username !== 'string' || !d.username) throw new Error('The server returned an incomplete profile. Please refresh and try again.');
+        $('p-username').textContent = d.username;
+        $('p-id').textContent = d.id == null ? '-' : String(d.id);
+        $('p-email').textContent = d.email || '-';
+        $('p-joined').textContent = fmtDate(d.joinedAt);
+        $('profile-btn-name').textContent = d.username;
+        setAvatar($('profile-avatar'), d.username, d.avatarColor);
+        setAvatar($('p-avatar'), d.username, d.avatarColor);
+        $('users-btn').hidden = !d.isAdmin; // cosmetic only: /api/admin/users refuses everyone else
+    } catch (e) {
+        const message = e && e.message ? e.message : 'Could not load your profile. Refresh the page and try again.';
+        $('p-username').textContent = message;
+        $('profile-btn-name').textContent = 'Profile unavailable';
+        $('p-id').textContent = '-'; $('p-email').textContent = '-'; $('p-joined').textContent = '-';
+        $('profile-avatar').textContent = '!'; $('p-avatar').textContent = '!';
+        $('profile-avatar').style.backgroundColor = '#b91c1c'; $('p-avatar').style.backgroundColor = '#b91c1c';
+    }
     document.documentElement.style.visibility = 'visible';
 })();
 </script>
