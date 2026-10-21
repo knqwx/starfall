@@ -166,22 +166,11 @@ function isReservedUsername(name) {
     }
     return false;
 }
+// Any characters and any length are allowed; only an empty name and the reserved staff-like names are refused.
 function checkUsername(name) {
-    if (name.length < 3) return 'Username must be at least 3 characters long.';
-    if (name.length > 24) return 'Username can be at most 24 characters long.';
-    if (!/^[A-Za-z0-9_.-]+$/.test(name)) return 'Username can only contain letters, numbers, dots, dashes and underscores.';
+    if (!name) return 'Please enter a username.';
     if (isReservedUsername(name)) return 'This username is reserved. Please choose another one.';
     return '';
-}
-function passwordProblems(pw) {
-    const bad = [];
-    if (pw.length < 10) bad.push('at least 10 characters');
-    if (pw.length > 128) bad.push('at most 128 characters');
-    if (!/[a-z]/.test(pw)) bad.push('a lowercase letter');
-    if (!/[A-Z]/.test(pw)) bad.push('an uppercase letter');
-    if (!/[0-9]/.test(pw)) bad.push('a number');
-    if (!/[^A-Za-z0-9]/.test(pw)) bad.push('a symbol');
-    return bad;
 }
 
 // ---------- passwords (scrypt, built into Node: no extra packages) ----------
@@ -240,7 +229,6 @@ async function authenticate(req, id, password) {
     const ip = ipOf(req);
     if (limited('login:' + ip, 20, 15 * 60 * 1000)) return { status: 429, body: { error: 'Too many attempts. Try again in a few minutes.' } };
     if (!id || !password) return { status: 400, body: { error: 'Please fill in all fields.' } };
-    if (id.length > 254 || password.length > 1000) return { status: 400, body: { error: BAD_LOGIN } };
     const rs = await db.execute({ sql: 'SELECT * FROM users WHERE lower(username) = lower(?) OR lower(email) = lower(?) ORDER BY (lower(username) = lower(?)) DESC LIMIT 1', args: [id, id, id] });
     const u = rs.rows.length ? rs.rows[0] : null;
     const key = lockKey(ip, u ? 'u' + u.id : 'n:' + id);
@@ -330,8 +318,6 @@ app.post('/api/signup', route(async (req, res) => {
 
         const uErr = checkUsername(username); if (uErr) return fail(uErr);
         const eErr = await checkEmail(email); if (eErr) return fail(eErr);
-        const pBad = passwordProblems(password);
-        if (pBad.length) return fail('Your password is too weak. It needs: ' + pBad.join(', ') + '.');
         if (b.ageConfirmed !== true) return fail('You must confirm that you are at least 13 years old.');
 
         // one account per day: per IP and per device cookie

@@ -160,29 +160,8 @@
                 <input type="password" id="password-input" autocomplete="current-password">
             </div>
 
-            <div class="signup-only" id="pw-meter">
-                <div class="pw-bar"><div class="pw-bar-fill" id="pw-bar-fill"></div></div>
-                <div class="pw-label"><span>Password strength</span><b id="pw-strength-text">-</b></div>
-                <ul class="pw-rules" id="pw-rules">
-                    <li data-rule="len">10+ characters</li>
-                    <li data-rule="lower">Lowercase letter</li>
-                    <li data-rule="upper">Uppercase letter</li>
-                    <li data-rule="num">A number</li>
-                    <li data-rule="sym">A symbol (!@#$...)</li>
-                    <li data-rule="max">At most 128 characters</li>
-                </ul>
-            </div>
-
             <div class="signup-only" id="age-wrap">
                 <label class="age-check"><input type="checkbox" id="age-checkbox"> <span>I am at least 13 years old.</span></label>
-            </div>
-
-            <div class="input-group">
-                <label for="captcha-input">Security verification</label>
-                <div class="captcha-box">
-                    <div class="captcha-question" id="captcha-question">? + ? =</div>
-                    <input type="text" id="captcha-input" inputmode="numeric" autocomplete="off" placeholder="Answer">
-                </div>
             </div>
 
             <button type="submit" class="action-btn" id="submit-btn">Log In</button>
@@ -204,12 +183,12 @@
 (function () {
     const $ = (id) => document.getElementById(id);
     const mainLabel = $('main-label'), mainInput = $('main-input'), emailInput = $('email-input'),
-          passwordInput = $('password-input'), captchaQuestion = $('captcha-question'), captchaInput = $('captcha-input'),
+          passwordInput = $('password-input'),
           submitBtn = $('submit-btn'), togglePrompt = $('toggle-prompt'), toggleBtn = $('toggle-btn'),
           authForm = $('auth-form'), errorMsg = $('error-msg'), usernameStatus = $('username-status'), emailStatus = $('email-status'),
           loading = $('redirect-loading');
 
-    let isLoginMode = true, correctAnswer = 0, busy = false;
+    let isLoginMode = true, busy = false;
 
     // ===== API helper =====
     // Same site (Render) -> httpOnly cookie. Page on another site (GitHub Pages) -> the server returns a token that is sent back as X-Session.
@@ -238,26 +217,15 @@
         }
     }
 
-    // ===== Captcha (a speed bump only; the server enforces the real limits) =====
-    function generateCaptcha() {
-        const a = Math.floor(Math.random() * 10) + 1, b = Math.floor(Math.random() * 10) + 1;
-        correctAnswer = a + b;
-        captchaQuestion.textContent = a + ' + ' + b + ' =';
-        captchaInput.value = '';
-    }
-    generateCaptcha();
-
-    function showError(msg) { errorMsg.textContent = msg; errorMsg.style.display = 'block'; generateCaptcha(); }
+    function showError(msg) { errorMsg.textContent = msg; errorMsg.style.display = 'block'; }
 
     // ===== Login / sign-up mode =====
     function setStatus(el, cls, text) { el.className = 'field-status ' + cls; el.textContent = text; }
     function setMode(loginMode) {
         isLoginMode = loginMode;
         errorMsg.style.display = 'none';
-        generateCaptcha();
         setStatus(usernameStatus, '', ''); setStatus(emailStatus, '', '');
         $('email-group').classList.toggle('show', !loginMode);
-        $('pw-meter').classList.toggle('show', !loginMode);
         $('age-wrap').classList.toggle('show', !loginMode);
         if (loginMode) {
             mainLabel.textContent = 'Username or email';
@@ -271,43 +239,12 @@
             passwordInput.autocomplete = 'new-password';
             togglePrompt.textContent = 'Already have an account?';
             toggleBtn.textContent = 'Log in';
-            updatePasswordMeter();
             if (mainInput.value.trim()) runUsernameCheck();
             if (emailInput.value.trim()) runEmailCheck();
         }
     }
     toggleBtn.addEventListener('click', () => { userSeq++; emailSeq++; setMode(!isLoginMode); });
     if (new URLSearchParams(location.search).get('mode') === 'signup') setMode(false);
-
-    // ===== Password strength (UX only; the server enforces the same rules) =====
-    function passwordChecks(pw) {
-        return { len: pw.length >= 10, lower: /[a-z]/.test(pw), upper: /[A-Z]/.test(pw), num: /[0-9]/.test(pw), sym: /[^A-Za-z0-9]/.test(pw), max: pw.length > 0 && pw.length <= 128 };
-    }
-    function passwordScore(pw, c) {
-        if (!pw) return 0;
-        let pool = 0;
-        if (/[a-z]/.test(pw)) pool += 26;
-        if (/[A-Z]/.test(pw)) pool += 26;
-        if (/[0-9]/.test(pw)) pool += 10;
-        if (/[^A-Za-z0-9]/.test(pw)) pool += 32;
-        const bits = pw.length * Math.log2(Math.max(pool, 2));
-        let score = bits < 36 ? 1 : bits < 52 ? 2 : bits < 70 ? 3 : 4;
-        if (!c.max) score = Math.min(score, 1);
-        if (!c.len) score = Math.min(score, 2);
-        return score;
-    }
-    const passwordOk = (c) => Object.values(c).every(Boolean);
-    function updatePasswordMeter() {
-        const pw = passwordInput.value, c = passwordChecks(pw), score = passwordScore(pw, c);
-        const labels = ['-', 'Weak', 'Fair', 'Good', 'Strong'], colors = ['#f93b3b', '#f93b3b', '#ffb020', '#9acd32', '#3bf973'];
-        $('pw-bar-fill').style.width = (score * 25) + '%';
-        $('pw-bar-fill').style.backgroundColor = colors[score];
-        $('pw-strength-text').textContent = labels[score];
-        $('pw-strength-text').style.color = colors[score];
-        document.querySelectorAll('#pw-rules li').forEach((li) => li.classList.toggle('ok', !!c[li.dataset.rule]));
-    }
-    passwordInput.addEventListener('input', updatePasswordMeter);
-    updatePasswordMeter();
 
     // ===== Live availability checks (sign-up only) =====
     let userSeq = 0, emailSeq = 0, userTimer = null, emailTimer = null;
@@ -348,9 +285,6 @@
         if (busy) return;
         errorMsg.style.display = 'none';
 
-        const answer = parseInt(captchaInput.value.trim(), 10);
-        if (isNaN(answer) || answer !== correctAnswer) { showError('Incorrect security answer. Please try again.'); return; }
-
         const password = passwordInput.value;
         let result, redirecting = false;
         busy = true;
@@ -359,9 +293,7 @@
             if (!isLoginMode) {
                 const username = mainInput.value.trim(), email = emailInput.value.trim().toLowerCase();
                 if (!username || !email || !password) { showError('Please fill in all fields.'); return; }
-                if (username.length < 3) { showError('Username must be at least 3 characters long.'); return; }
                 if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) { showError('Please enter a valid email address.'); return; }
-                if (!passwordOk(passwordChecks(password))) { showError('Your password is too weak. Meet every requirement shown under the password box.'); return; }
                 if (!$('age-checkbox').checked) { showError('You must confirm that you are at least 13 years old.'); return; }
                 $('loading-title').textContent = 'Creating your account…';
                 loading.classList.add('active');
