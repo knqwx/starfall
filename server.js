@@ -30,13 +30,39 @@ app.set('trust proxy', 1); // Render has one proxy hop
 async function initDB() {
     const run = async (sql) => { try { await db.execute(sql); } catch (e) { /* column/table already exists */ } };
     await run(`CREATE TABLE IF NOT EXISTS users (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id TEXT PRIMARY KEY,
         username TEXT UNIQUE NOT NULL,
         email TEXT,
-        password TEXT NOT NULL
+        password TEXT NOT NULL,
+        passwordHash TEXT,
+        joinedAt INTEGER,
+        lastIp TEXT,
+        avatarColor TEXT
     )`);
     for (const col of ['passwordHash TEXT', 'joinedAt INTEGER', 'lastIp TEXT', 'avatarColor TEXT']) await run(`ALTER TABLE users ADD COLUMN ${col}`);
-    await run(`CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, userId INTEGER NOT NULL, createdAt INTEGER, expiresAt INTEGER)`);
+
+    // Migrate legacy INTEGER PRIMARY KEY IDs to TEXT so IDs may contain letters.
+    const userInfo = await db.execute('PRAGMA table_info(users)');
+    const idColumn = userInfo.rows.find((c) => String(c.name) === 'id');
+    if (idColumn && String(idColumn.type || '').toUpperCase() === 'INTEGER') {
+        await db.batch([
+            { sql: `CREATE TABLE users_text_migration (id TEXT PRIMARY KEY, username TEXT UNIQUE NOT NULL, email TEXT, password TEXT NOT NULL, passwordHash TEXT, joinedAt INTEGER, lastIp TEXT, avatarColor TEXT)` },
+            { sql: `INSERT INTO users_text_migration (id, username, email, password, passwordHash, joinedAt, lastIp, avatarColor) SELECT CAST(id AS TEXT), username, email, password, passwordHash, joinedAt, lastIp, avatarColor FROM users` },
+            { sql: 'DROP TABLE users' },
+            { sql: 'ALTER TABLE users_text_migration RENAME TO users' }
+        ], 'write');
+    }
+    await run(`CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, userId TEXT NOT NULL, createdAt INTEGER, expiresAt INTEGER)`);
+    const sessionInfo = await db.execute('PRAGMA table_info(sessions)');
+    const sessionUserId = sessionInfo.rows.find((c) => String(c.name) === 'userId');
+    if (sessionUserId && String(sessionUserId.type || '').toUpperCase() !== 'TEXT') {
+        await db.batch([
+            { sql: `CREATE TABLE sessions_text_migration (id TEXT PRIMARY KEY, userId TEXT NOT NULL, createdAt INTEGER, expiresAt INTEGER)` },
+            { sql: `INSERT INTO sessions_text_migration (id, userId, createdAt, expiresAt) SELECT id, CAST(userId AS TEXT), createdAt, expiresAt FROM sessions` },
+            { sql: 'DROP TABLE sessions' },
+            { sql: 'ALTER TABLE sessions_text_migration RENAME TO sessions' }
+        ], 'write');
+    }
     await run(`CREATE TABLE IF NOT EXISTS login_lockouts (k TEXT PRIMARY KEY, fails INTEGER NOT NULL DEFAULT 0, level INTEGER NOT NULL DEFAULT 0, lockedUntil INTEGER NOT NULL DEFAULT 0, lastFailAt INTEGER NOT NULL DEFAULT 0)`);
     await run(`CREATE TABLE IF NOT EXISTS signup_log (id INTEGER PRIMARY KEY AUTOINCREMENT, ip TEXT, createdAt INTEGER)`);
     await run(`CREATE INDEX IF NOT EXISTS sessions_user ON sessions (userId)`);
@@ -200,7 +226,7 @@ async function verifyPassword(u, password) {
     if (u.passwordHash) ok = await checkHash(password, u.passwordHash);
     if (!ok && typeof u.password === 'string' && u.password) {
         ok = u.password.startsWith('scrypt$') ? await checkHash(password, u.password) : safeEqual(u.password, password);
-        if (ok) await db.execute({ sql: "UPDATE users SET passwordHash = ?, password = '' WHERE id = ?", args: [await hashPassword(password), Number(u.id)] });
+        if (ok) await db.execute({ sql: "UPDATE users SET passwordHash = ?, password = '' WHERE id = ?", args: [await hashPassword(password), String(u.id)] });
     }
     return ok;
 }
@@ -254,7 +280,7 @@ async function authenticate(req, id, password) {
 // Same-site pages use an httpOnly cookie. A page on another site (GitHub Pages) gets the token in the response and sends it back as X-Session.
 async function startSession(res, userId) {
     const raw = crypto.randomBytes(32).toString('hex'), now = Date.now();
-    await db.execute({ sql: 'INSERT INTO sessions (id, userId, createdAt, expiresAt) VALUES (?, ?, ?, ?)', args: [sha256(raw), Number(userId), now, now + SESSION_MS] });
+    await db.execute({ sql: 'INSERT INTO sessions (id, userId, createdAt, expiresAt) VALUES (?, ?, ?, ?)', args: [sha256(raw), String(userId), now, now + SESSION_MS] });
     setCookie(res, 'sid', raw, SESSION_MS);
     return raw;
 }
@@ -299,9 +325,9 @@ app.get('/api/me', route(requireUser), route(async (req, res) => {
         username: String(u.username),
         email: u.email ? String(u.email) : '',
         joinedAt: Number(u.joinedAt) || 0,
-        id: Number(u.id),
+        id: String(u.id),
         isAdmin: isAdminUser(u),
-        avatarColor: (typeof u.avatarColor === 'string' && /^#[0-9a-f]{6}$/i.test(u.avatarColor)) ? u.avatarColor : await (async () => { const color = randomAvatarColor(); await db.execute({ sql: 'UPDATE users SET avatarColor = ? WHERE id = ?', args: [color, Number(u.id)] }); return color; })()
+        avatarColor: (typeof u.avatarColor === 'string' && /^#[0-9a-f]{6}$/i.test(u.avatarColor)) ? u.avatarColor : await (async () => { const color = randomAvatarColor(); await db.execute({ sql: 'UPDATE users SET avatarColor = ? WHERE id = ?', args: [color, String(u.id)] }); return color; })()
     });
 }));
 
@@ -311,7 +337,7 @@ app.get('/api/admin/users', route(requireUser), route(async (req, res) => {
     const r = await db.execute('SELECT id, username, email, joinedAt FROM users ORDER BY id');
     res.json({
         total: r.rows.length,
-        users: r.rows.map((x) => ({ id: Number(x.id), username: String(x.username), email: x.email ? String(x.email) : '', joinedAt: Number(x.joinedAt) || 0 }))
+        users: r.rows.map((x) => ({ id: String(x.id), username: String(x.username), email: x.email ? String(x.email) : '', joinedAt: Number(x.joinedAt) || 0 }))
     });
 }));
 
@@ -372,13 +398,13 @@ app.post('/api/signup', route(async (req, res) => {
         if ((await db.execute({ sql: 'SELECT 1 FROM users WHERE lower(email) = ? LIMIT 1', args: [email] })).rows.length) return fail('We could not create an account with these details. Check them and try again, or log in if you already have an account.');
 
         const hash = await hashPassword(password);
-        let newId;
+        let newId = String(Date.now()) + String(crypto.randomInt(100, 1000));
+        while ((await db.execute({ sql: 'SELECT 1 FROM users WHERE id = ?', args: [newId] })).rows.length) newId = String(Date.now()) + String(crypto.randomInt(100, 1000));
         try {
-            const ins = await db.execute({
-                sql: "INSERT INTO users (username, email, password, passwordHash, lastIp, joinedAt, avatarColor) VALUES (?, ?, '', ?, ?, ?, ?)",
-                args: [username, email, hash, ip || null, now, randomAvatarColor()]
+            await db.execute({
+                sql: "INSERT INTO users (id, username, email, password, passwordHash, lastIp, joinedAt, avatarColor) VALUES (?, ?, ?, '', ?, ?, ?, ?)",
+                args: [newId, username, email, hash, ip || null, now, randomAvatarColor()]
             });
-            newId = Number(ins.lastInsertRowid);
         } catch (e) {
             if (String(e.message || e).toUpperCase().includes('UNIQUE')) return fail('This username is already taken.');
             throw e;
@@ -400,7 +426,7 @@ app.post('/api/login', route(async (req, res) => {
         const r = await authenticate(req, id, password);
         if (!r.user) return res.status(r.status).json(r.body);
         const u = r.user, ip = ipOf(req);
-        if (ip) { try { await db.execute({ sql: 'UPDATE users SET lastIp = ? WHERE id = ?', args: [ip, Number(u.id)] }); } catch (e) {} }
+        if (ip) { try { await db.execute({ sql: 'UPDATE users SET lastIp = ? WHERE id = ?', args: [ip, String(u.id)] }); } catch (e) {} }
         const token = await startSession(res, u.id);
         res.json({ username: String(u.username), ...(crossPage(req) ? { token } : {}) });
     } catch (e) {
@@ -411,7 +437,7 @@ app.post('/api/login', route(async (req, res) => {
 
 // Change password after verifying the current password; other sessions are revoked.
 app.post('/api/change-password', route(requireUser), route(async (req, res) => {
-    if (limited('password-change:' + Number(req.user.id), 5, 15 * 60 * 1000)) return res.status(429).json({ error: 'Too many attempts. Please try again later.' });
+    if (limited('password-change:' + String(req.user.id), 5, 15 * 60 * 1000)) return res.status(429).json({ error: 'Too many attempts. Please try again later.' });
     const b = req.body && typeof req.body === 'object' ? req.body : {};
     const currentPassword = String(b.currentPassword || '');
     const newPassword = String(b.newPassword || '');
@@ -420,12 +446,12 @@ app.post('/api/change-password', route(requireUser), route(async (req, res) => {
     if (Buffer.byteLength(newPassword, 'utf8') < 8) return res.status(400).json({ error: 'New password must be at least 8 bytes long.' });
     if (Buffer.byteLength(newPassword, 'utf8') > 1024) return res.status(400).json({ error: 'New password is too long (maximum 1024 bytes).' });
     if (newPassword !== confirmPassword) return res.status(400).json({ error: 'New passwords do not match.' });
-    const row = await db.execute({ sql: 'SELECT * FROM users WHERE id = ?', args: [Number(req.user.id)] });
+    const row = await db.execute({ sql: 'SELECT * FROM users WHERE id = ?', args: [String(req.user.id)] });
     if (!row.rows.length || !(await verifyPassword(row.rows[0], currentPassword))) return res.status(400).json({ error: 'Current password is incorrect.' });
     const hash = await hashPassword(newPassword);
-    await db.execute({ sql: "UPDATE users SET passwordHash = ?, password = '' WHERE id = ?", args: [hash, Number(req.user.id)] });
+    await db.execute({ sql: "UPDATE users SET passwordHash = ?, password = '' WHERE id = ?", args: [hash, String(req.user.id)] });
     const currentTokenHash = sha256(req.user.token);
-    await db.execute({ sql: 'DELETE FROM sessions WHERE userId = ? AND id <> ?', args: [Number(req.user.id), currentTokenHash] });
+    await db.execute({ sql: 'DELETE FROM sessions WHERE userId = ? AND id <> ?', args: [String(req.user.id), currentTokenHash] });
     res.json({ ok: true, message: 'Password changed. Other sessions have been signed out.' });
 }));
 
@@ -437,7 +463,10 @@ app.post('/api/logout', route(async (req, res) => {
     res.json({ ok: true });
 }));
 
-const parseUserId = (s) => (/^\d{1,15}$/.test(String(s)) ? Number(s) : 0);
+const parseUserId = (s) => {
+    const value = String(s == null ? '' : s).trim();
+    return /^[A-Za-z0-9_-]{1,32}$/.test(value) ? value : '';
+};
 
 // One account's profile, as seen by the admin.
 app.get('/api/admin/users/:id', route(requireUser), route(async (req, res) => {
@@ -448,19 +477,19 @@ app.get('/api/admin/users/:id', route(requireUser), route(async (req, res) => {
     const s = await db.execute({ sql: 'SELECT COUNT(*) AS n FROM sessions WHERE userId = ? AND expiresAt > ?', args: [id, Date.now()] });
     const u = r.rows[0];
     res.json({
-        id: Number(u.id), username: String(u.username), email: u.email ? String(u.email) : '',
+        id: String(u.id), username: String(u.username), email: u.email ? String(u.email) : '',
         joinedAt: Number(u.joinedAt) || 0, activeSessions: Number(s.rows[0].n) || 0,
-        isSelf: Number(u.id) === Number(req.user.id),
+        isSelf: String(u.id) === String(req.user.id),
         isAdmin: isAdminUser(u)
     });
 }));
 
-// Change a user's numeric account ID without orphaning their active sessions.
+// Change a user's ID to letters, numbers, underscores, or hyphens without orphaning sessions.
 app.post('/api/admin/users/:id/change-id', route(requireUser), route(async (req, res) => {
     if (!isAdminUser(req.user)) return res.status(403).json({ error: 'Not allowed.' });
     const oldId = parseUserId(req.params.id);
-    const newId = parseUserId(String((req.body || {}).newId || '').trim());
-    if (!oldId || !newId || !Number.isSafeInteger(newId)) return res.status(400).json({ error: 'Enter a valid positive numeric ID (up to 15 digits).' });
+    const newId = parseUserId((req.body || {}).newId);
+    if (!oldId || !newId) return res.status(400).json({ error: 'Use 1–32 letters, numbers, underscores, or hyphens.' });
     if (oldId === newId) return res.status(400).json({ error: 'That account already has this ID.' });
     const targetResult = await db.execute({ sql: 'SELECT id, username FROM users WHERE id = ?', args: [oldId] });
     if (!targetResult.rows.length) return res.status(404).json({ error: 'User not found.' });
@@ -468,8 +497,7 @@ app.post('/api/admin/users/:id/change-id', route(requireUser), route(async (req,
     if (exists.rows.length) return res.status(409).json({ error: 'That ID is already in use.' });
     await db.batch([
         { sql: 'UPDATE users SET id = ? WHERE id = ?', args: [newId, oldId] },
-        { sql: 'UPDATE sessions SET userId = ? WHERE userId = ?', args: [newId, oldId] },
-        { sql: "UPDATE sqlite_sequence SET seq = MAX(seq, ?) WHERE name = 'users'", args: [newId] }
+        { sql: 'UPDATE sessions SET userId = ? WHERE userId = ?', args: [newId, oldId] }
     ], 'write');
     res.json({ ok: true, oldId, newId, username: String(targetResult.rows[0].username) });
 }));
@@ -481,7 +509,7 @@ app.delete('/api/admin/users/:id', route(requireUser), route(async (req, res) =>
     const r = id ? await db.execute({ sql: 'SELECT id, username FROM users WHERE id = ?', args: [id] }) : { rows: [] };
     if (!r.rows.length) return res.status(404).json({ error: 'User not found.' });
     const target = r.rows[0];
-    if (Number(target.id) === Number(req.user.id) || isAdminUser(target)) return res.status(400).json({ error: 'This account cannot be deleted here.' });
+    if (String(target.id) === String(req.user.id) || isAdminUser(target)) return res.status(400).json({ error: 'This account cannot be deleted here.' });
     await db.batch([
         { sql: 'DELETE FROM sessions WHERE userId = ?', args: [id] },
         { sql: 'DELETE FROM users WHERE id = ?', args: [id] }

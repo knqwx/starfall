@@ -84,12 +84,23 @@
     <header class="site-header">
         <div class="site-logo"><img src="assets/Starfall.webp" alt="Starfall"></div>
         <div class="topbar">
-            <button class="top-btn profile-trigger" id="profile-btn" type="button"><span class="avatar" id="profile-avatar" aria-hidden="true">?</span><span class="profile-trigger-name" id="profile-btn-name">Profile</span></button>
+            <button class="top-btn" id="balance-btn" type="button" title="Balance">Balance: <span id="balance-amount">$0.00</span></button>
             <button class="top-btn icon-btn" id="notifications-btn" type="button" aria-label="Notifications" title="Notifications">🔔</button>
+            <button class="top-btn profile-trigger" id="profile-btn" type="button"><span class="avatar" id="profile-avatar" aria-hidden="true">?</span><span class="profile-trigger-name" id="profile-btn-name">Profile</span></button>
         </div>
     </header>
 
     <div class="hero"><div class="admin-tools"><button class="top-btn" id="users-btn" type="button" hidden>Users database</button></div><h1>Starfall</h1></div>
+
+    <!-- Balance -->
+    <div class="overlay" id="balance-overlay">
+        <div class="window small" role="dialog" aria-modal="true" aria-labelledby="balance-title">
+            <button class="close-x" type="button" data-close="balance-overlay" aria-label="Close">&times;</button>
+            <h2 id="balance-title">Balance</h2>
+            <div class="profile-row"><span>Current balance</span><span id="balance-modal-amount">$0.00</span></div>
+            <div class="notification-empty">Your balance will appear here when the wallet system is connected.</div>
+        </div>
+    </div>
 
     <!-- Notifications -->
     <div class="overlay" id="notifications-overlay">
@@ -153,8 +164,8 @@
                 <div class="profile-row"><span>Member since</span><span id="d-joined">-</span></div>
                 <div class="profile-row"><span>Active sessions</span><span id="d-sessions">-</span></div>
                 <div id="d-change-id-section">
-                    <label class="field-label" for="d-new-id">Change numeric account ID</label>
-                    <input class="field-input" id="d-new-id" type="number" min="1" step="1" inputmode="numeric">
+                    <label class="field-label" for="d-new-id">Change account ID</label>
+                    <input class="field-input" id="d-new-id" type="text" maxlength="32" pattern="[A-Za-z0-9_-]{1,32}" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Letters, numbers, _ or -">
                     <button class="btn" id="d-change-id-btn" type="button">Save new ID</button>
                     <div class="form-note" id="d-id-msg" role="status"></div>
                 </div>
@@ -194,6 +205,7 @@
     };
     $('profile-btn').addEventListener('click', () => open('profile-overlay'));
     $('notifications-btn').addEventListener('click', () => open('notifications-overlay'));
+    $('balance-btn').addEventListener('click', () => open('balance-overlay'));
     $('change-password-btn').addEventListener('click', async () => {
         const button = $('change-password-btn');
         const msg = $('password-msg');
@@ -295,18 +307,18 @@
     }
     $('d-change-id-btn').addEventListener('click', async () => {
         if (!detail) return;
-        const newId = Number($('d-new-id').value);
+        const newId = $('d-new-id').value.trim();
         const msg = $('d-id-msg'); msg.style.color = '#ff6b6b';
-        if (!Number.isSafeInteger(newId) || newId < 1 || String(newId).length > 15) { msg.textContent = 'Enter a valid positive numeric ID (up to 15 digits).'; return; }
-        if (newId === Number(detail.id)) { msg.textContent = 'That account already has this ID.'; return; }
+        if (!/^[A-Za-z0-9_-]{1,32}$/.test(newId)) { msg.textContent = 'Use 1–32 letters, numbers, underscores, or hyphens.'; return; }
+        if (newId === String(detail.id)) { msg.textContent = 'That account already has this ID.'; return; }
         const button = $('d-change-id-btn'); button.disabled = true; button.textContent = 'Saving...';
         try {
             const r = await fetch(API_BASE + '/api/admin/users/' + encodeURIComponent(detail.id) + '/change-id', { method: 'POST', headers: { ...headers(), 'Content-Type': 'application/json' }, body: JSON.stringify({ newId }) });
             const d = await r.json().catch(() => ({}));
             if (!r.ok) { msg.textContent = d.error || 'Could not change ID.'; return; }
-            const oldId = Number(detail.id); detail.id = d.newId;
+            const oldId = String(detail.id); detail.id = String(d.newId);
             $('d-id').textContent = String(d.newId); $('d-new-id').value = String(d.newId);
-            allUsers = allUsers.map((u) => Number(u.id) === oldId ? { ...u, id: d.newId } : u);
+            allUsers = allUsers.map((u) => String(u.id) === oldId ? { ...u, id: String(d.newId) } : u);
             renderUsers(); msg.style.color = '#86efac'; msg.textContent = 'Account ID changed successfully.';
         } catch (e) { msg.textContent = 'Cannot reach the server.'; }
         finally { button.disabled = false; button.textContent = 'Save new ID'; }
