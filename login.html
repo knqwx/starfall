@@ -181,7 +181,7 @@
         <button class="action-btn" id="submit-btn">Log In</button>
 
         <div class="toggle-text" id="toggle-container">
-            Don't have an account? <a id="toggle-link" href="#">Sign up</a>
+            Don't have an account? <a id="toggle-link">Sign up</a>
         </div>
     </div>
 
@@ -194,13 +194,12 @@
     <script type="module">
         import { createClient } from "https://esm.sh/@libsql/client@0.14.0";
 
-        // Вставь свои данные от Turso прямо сюда
+        // Замени на свои данные Turso
         const db = createClient({
             url: "ТВОЙ_TURSO_URL",
             authToken: "ТВОЙ_TURSO_TOKEN"
         });
 
-        // Создаем таблицу автоматически при загрузке, если её нет
         async function initDB() {
             try {
                 await db.execute(`
@@ -220,7 +219,6 @@
         const submitBtn = document.getElementById('submit-btn');
         const emailGroup = document.getElementById('email-group');
         const toggleContainer = document.getElementById('toggle-container');
-        const toggleLink = document.getElementById('toggle-link');
         const emailInput = document.getElementById('email');
         const emailError = document.getElementById('email-error');
         const usernameInput = document.getElementById('username');
@@ -228,70 +226,64 @@
 
         let isLoginMode = true;
 
-        function updateMode(e) {
-            e.preventDefault();
-            isLoginMode = !isLoginMode;
+        // Делегирование клика, чтобы кнопка переключения работала всегда
+        toggleContainer.addEventListener('click', (e) => {
+            if (e.target && e.target.id === 'toggle-link') {
+                e.preventDefault();
+                isLoginMode = !isLoginMode;
 
-            emailInput.classList.remove('error', 'success');
-            emailError.style.display = 'none';
-            emailInput.value = '';
-            
-            usernameInput.classList.remove('error', 'success');
-            usernameStatus.style.display = 'none';
-            usernameInput.value = '';
+                emailInput.classList.remove('error', 'success');
+                emailError.style.display = 'none';
+                emailInput.value = '';
+                
+                usernameInput.classList.remove('error', 'success');
+                usernameStatus.style.display = 'none';
+                usernameInput.value = '';
 
-            if (isLoginMode) {
-                submitBtn.textContent = 'Log In';
-                emailGroup.classList.remove('show');
-                toggleContainer.innerHTML = 'Don\'t have an account? <a id="toggle-link" href="#">Sign up</a>';
-            } else {
-                submitBtn.textContent = 'Sign Up';
-                emailGroup.classList.add('show');
-                toggleContainer.innerHTML = 'Already have an account? <a id="toggle-link" href="#">Log in</a>';
+                if (isLoginMode) {
+                    submitBtn.textContent = 'Log In';
+                    emailGroup.classList.remove('show');
+                    toggleContainer.innerHTML = 'Don\'t have an account? <a id="toggle-link">Sign up</a>';
+                } else {
+                    submitBtn.textContent = 'Sign Up';
+                    emailGroup.classList.add('show');
+                    toggleContainer.innerHTML = 'Already have an account? <a id="toggle-link">Log in</a>';
+                }
             }
+        });
 
-            document.getElementById('toggle-link').addEventListener('click', updateMode);
-        }
-
-        toggleLink.addEventListener('click', updateMode);
-
-        // Проверка доступности ника в реальном времени
+        // Проверка доступности ника
         usernameInput.addEventListener('input', async () => {
             const val = usernameInput.value.trim();
-            if (val.length === 0) {
+            if (val.length === 0 || isLoginMode) {
                 usernameInput.classList.remove('error', 'success');
                 usernameStatus.style.display = 'none';
                 return;
             }
 
-            if (!isLoginMode) {
-                try {
-                    const result = await db.execute({
-                        sql: 'SELECT * FROM users WHERE username = ?',
-                        args: [val]
-                    });
+            try {
+                const result = await db.execute({
+                    sql: 'SELECT * FROM users WHERE username = ?',
+                    args: [val]
+                });
 
-                    if (result.rows.length > 0) {
-                        usernameInput.classList.add('error');
-                        usernameInput.classList.remove('success');
-                        usernameStatus.textContent = 'Username is already taken';
-                        usernameStatus.className = 'status-msg error';
-                    } else {
-                        usernameInput.classList.remove('error');
-                        usernameInput.classList.add('success');
-                        usernameStatus.textContent = 'Username is available';
-                        usernameStatus.className = 'status-msg success';
-                    }
-                } catch (err) {
-                    console.error(err);
+                if (result.rows.length > 0) {
+                    usernameInput.classList.add('error');
+                    usernameInput.classList.remove('success');
+                    usernameStatus.textContent = 'Username is already taken';
+                    usernameStatus.className = 'status-msg error';
+                } else {
+                    usernameInput.classList.remove('error');
+                    usernameInput.classList.add('success');
+                    usernameStatus.textContent = 'Username is available';
+                    usernameStatus.className = 'status-msg success';
                 }
-            } else {
-                usernameInput.classList.remove('error', 'success');
-                usernameStatus.style.display = 'none';
+            } catch (err) {
+                console.error(err);
             }
         });
 
-        // Регистрация и Вход
+        // Отправка формы (Вход / Регистрация)
         submitBtn.addEventListener('click', async (e) => {
             e.preventDefault();
             const usernameVal = usernameInput.value.trim();
