@@ -40,6 +40,9 @@ async function initDB() {
     await run(`CREATE TABLE IF NOT EXISTS login_lockouts (k TEXT PRIMARY KEY, fails INTEGER NOT NULL DEFAULT 0, level INTEGER NOT NULL DEFAULT 0, lockedUntil INTEGER NOT NULL DEFAULT 0, lastFailAt INTEGER NOT NULL DEFAULT 0)`);
     await run(`CREATE TABLE IF NOT EXISTS signup_log (id INTEGER PRIMARY KEY AUTOINCREMENT, ip TEXT, createdAt INTEGER)`);
     await run(`CREATE INDEX IF NOT EXISTS sessions_user ON sessions (userId)`);
+    // Enforce case-insensitive username uniqueness at the database level where existing data permits it.
+    try { await db.execute('CREATE UNIQUE INDEX IF NOT EXISTS users_username_nocase ON users (username COLLATE NOCASE)'); }
+    catch (e) { console.warn('Could not create case-insensitive username index; check for existing case-duplicate usernames.'); }
     await run(`DELETE FROM sessions WHERE expiresAt < ${Date.now()}`);
     console.log('Turso Database initialized successfully');
 }
@@ -166,9 +169,12 @@ function isReservedUsername(name) {
     }
     return false;
 }
-// Any characters and any length are allowed; only an empty name and the reserved staff-like names are refused.
+// Usernames are limited to ASCII English letters, digits, dots, underscores, and hyphens.
+const MAX_USERNAME_BYTES = 40 * 1024;
 function checkUsername(name) {
     if (!name) return 'Please enter a username.';
+    if (Buffer.byteLength(name, 'utf8') > MAX_USERNAME_BYTES) return 'Username is too long. Maximum size is 40 KB.';
+    if (!/^[A-Za-z0-9_.-]+$/.test(name)) return 'Usernames can only contain English letters, numbers, dots, underscores, and hyphens.';
     if (isReservedUsername(name)) return 'This username is reserved. Please choose another one.';
     return '';
 }
