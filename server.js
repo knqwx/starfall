@@ -41,11 +41,14 @@ async function initDB() {
     )`);
     for (const col of ['passwordHash TEXT', 'joinedAt INTEGER', 'lastIp TEXT', 'avatarColor TEXT']) await run(`ALTER TABLE users ADD COLUMN ${col}`);
 
-    // Migrate legacy INTEGER PRIMARY KEY IDs to TEXT so IDs may contain letters.
+    // Migrate any legacy non-TEXT primary-key IDs to TEXT so IDs may contain letters.
     const userInfo = await db.execute('PRAGMA table_info(users)');
     const idColumn = userInfo.rows.find((c) => String(c.name) === 'id');
-    if (idColumn && String(idColumn.type || '').toUpperCase() === 'INTEGER') {
+    if (idColumn && String(idColumn.type || '').trim().toUpperCase() !== 'TEXT') {
+        // Rebuild any non-TEXT ID schema (including INTEGER PRIMARY KEY/AUTOINCREMENT).
+        // Dropping a stale temp table also recovers cleanly from an interrupted prior migration.
         await db.batch([
+            { sql: 'DROP TABLE IF EXISTS users_text_migration' },
             { sql: `CREATE TABLE users_text_migration (id TEXT PRIMARY KEY, username TEXT UNIQUE NOT NULL, email TEXT, password TEXT NOT NULL, passwordHash TEXT, joinedAt INTEGER, lastIp TEXT, avatarColor TEXT)` },
             { sql: `INSERT INTO users_text_migration (id, username, email, password, passwordHash, joinedAt, lastIp, avatarColor) SELECT CAST(id AS TEXT), username, email, password, passwordHash, joinedAt, lastIp, avatarColor FROM users` },
             { sql: 'DROP TABLE users' },

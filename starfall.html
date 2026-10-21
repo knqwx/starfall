@@ -24,6 +24,9 @@
             padding: 9px 16px; font-size: 0.95rem; font-weight: bold; cursor: pointer;
         }
         .top-btn:hover { background: #2c2c38; border-color: #555566; }
+        .social-btn { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-width: 42px; }
+        .social-icon { font-size: 1.05rem; line-height: 1; }
+        .youtube-icon { color: #ff5555; } .telegram-icon { color: #54b7f0; } .discord-icon { color: #a9a5ff; }
         .profile-trigger { display: inline-flex; align-items: center; gap: 9px; max-width: min(52vw, 260px); }
         .profile-trigger-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .avatar { display: inline-flex; flex: 0 0 auto; width: 30px; height: 30px; border-radius: 50%; align-items: center; justify-content: center; color: #fff; font-size: 0.9rem; font-weight: 800; border: 1px solid rgba(255,255,255,.28); text-transform: uppercase; }
@@ -77,13 +80,16 @@
         .note { color: #9a9aa5; font-size: 0.85rem; margin-top: 16px; text-align: center; }
         .confirm-text { color: #cfcfd6; font-size: 0.85rem; line-height: 1.45; margin: 16px 0 10px; }
         .confirm-text b { color: #fff; overflow-wrap: anywhere; }
-        @media (max-width: 600px) { .site-header { min-height: 94px; align-items: flex-start; padding: 8px 10px; } .site-logo { padding: 0 8px; } .site-logo img { height: 34px; max-width: 48vw; } .topbar { top: auto; bottom: 7px; left: 8px; right: 8px; justify-content: flex-end; gap: 7px; } .top-btn { padding: 6px 10px; font-size: .85rem; } .profile-trigger { padding: 5px 8px; } .avatar { width: 25px; height: 25px; } }
+        @media (max-width: 600px) { .site-header { min-height: 100px; align-items: flex-start; padding: 7px 8px; } .site-logo { padding: 0 8px; } .site-logo img { height: 32px; max-width: 48vw; } .topbar { top: auto; bottom: 7px; left: 5px; right: 5px; justify-content: center; gap: 5px; flex-wrap: nowrap; } .top-btn { padding: 6px 7px; font-size: .8rem; } .social-btn { min-width: 34px; padding: 6px 8px; } .social-label { display: none; } .icon-btn { min-width: 34px; padding: 6px 8px; } .profile-trigger { padding: 5px 7px; gap: 5px; max-width: 30vw; } .avatar { width: 23px; height: 23px; } }
     </style>
 </head>
 <body>
     <header class="site-header">
         <div class="site-logo"><img src="assets/Starfall.webp" alt="Starfall"></div>
         <div class="topbar">
+            <button class="top-btn social-btn" id="youtube-btn" type="button" title="YouTube — coming soon" aria-label="YouTube, coming soon"><span class="social-icon youtube-icon" aria-hidden="true">▶</span><span class="social-label">YouTube</span></button>
+            <button class="top-btn social-btn" id="telegram-btn" type="button" title="Telegram — coming soon" aria-label="Telegram, coming soon"><span class="social-icon telegram-icon" aria-hidden="true">➤</span><span class="social-label">Telegram</span></button>
+            <button class="top-btn social-btn" id="discord-btn" type="button" title="Discord — coming soon" aria-label="Discord, coming soon"><span class="social-icon discord-icon" aria-hidden="true">🎮</span><span class="social-label">Discord</span></button>
             <button class="top-btn" id="balance-btn" type="button" title="Balance">Balance: <span id="balance-amount">$0.00</span></button>
             <button class="top-btn icon-btn" id="notifications-btn" type="button" aria-label="Notifications" title="Notifications">🔔</button>
             <button class="top-btn profile-trigger" id="profile-btn" type="button"><span class="avatar" id="profile-avatar" aria-hidden="true">?</span><span class="profile-trigger-name" id="profile-btn-name">Profile</span></button>
