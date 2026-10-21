@@ -235,30 +235,39 @@
 
         let isLoginMode = true;
 
-        // Надежное переключение режимов по клику
-        toggleContainer.addEventListener('click', () => {
+        const togglePrompt = document.getElementById('toggle-prompt');
+
+        // Only the actual button toggles modes. Delegation keeps the handler
+        // working even if the button's text changes.
+        toggleContainer.addEventListener('click', (event) => {
+            const button = event.target.closest('#toggle-action');
+            if (!button || !toggleContainer.contains(button)) return;
+
+            event.preventDefault();
             isLoginMode = !isLoginMode;
 
             emailInput.classList.remove('error', 'success');
             emailError.style.display = 'none';
             emailInput.value = '';
-            
+
             usernameInput.classList.remove('error', 'success');
             usernameStatus.style.display = 'none';
-            usernameInput.value = '';
-
-            toggleAction.className = 'toggle-action';
-            toggleAction.type = 'button';
+            usernameStatus.textContent = '';
 
             if (isLoginMode) {
                 submitBtn.textContent = 'Log In';
                 emailGroup.classList.remove('show');
-                toggleContainer.innerHTML = 'Don\'t have an account? <span id="toggle-action">Sign up</span>';
+                togglePrompt.textContent = "Don't have an account?";
+                button.textContent = 'Sign up';
             } else {
                 submitBtn.textContent = 'Sign Up';
                 emailGroup.classList.add('show');
-                toggleContainer.innerHTML = 'Already have an account? <span id="toggle-action">Log in</span>';
+                togglePrompt.textContent = 'Already have an account?';
+                button.textContent = 'Log in';
             }
+
+            button.className = 'toggle-action';
+            button.type = 'button';
         });
 
         // Username availability check (only if the backend exposes this endpoint).
