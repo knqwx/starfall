@@ -15,6 +15,7 @@
             align-items: center;
             height: 100vh;
             margin: 0;
+            box-sizing: border-box;
         }
         .container {
             width: 360px;
@@ -26,6 +27,7 @@
             box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
             padding: 30px 20px 20px 20px;
             box-sizing: border-box;
+            margin: auto;
         }
         .logo {
             width: 50px;
@@ -36,6 +38,7 @@
         .input-group {
             width: 100%;
             margin-bottom: 15px;
+            transition: all 0.3s ease;
         }
         .input-group label {
             display: block;
@@ -57,6 +60,18 @@
             outline: none;
             border-color: #555566;
         }
+        #email-group {
+            max-height: 0;
+            opacity: 0;
+            overflow: hidden;
+            margin-bottom: 0;
+            transition: max-height 0.3s ease, opacity 0.3s ease, margin-bottom 0.3s ease;
+        }
+        #email-group.show {
+            max-height: 100px;
+            opacity: 1;
+            margin-bottom: 15px;
+        }
         .action-btn {
             width: 100%;
             padding: 10px;
@@ -68,6 +83,7 @@
             font-weight: bold;
             cursor: pointer;
             margin-top: 10px;
+            transition: background-color 0.2s;
         }
         .action-btn:hover {
             background-color: #3131d9;
@@ -88,9 +104,10 @@
             text-decoration: underline;
         }
         .footer-links {
-            margin-top: 20px;
+            margin-top: auto;
+            margin-bottom: 20px;
             display: flex;
-            gap: 15px;
+            gap: 20px;
         }
         .footer-links a {
             color: #7b7b85;
@@ -107,14 +124,12 @@
     <div class="container">
         <img src="assets/Starfall.webp" alt="Starfall" class="logo">
         
-        <!-- Поля формы -->
         <div class="input-group">
             <label for="username">Username</label>
             <input type="text" id="username">
         </div>
         
-        <!-- Дополнительное поле для регистрации (изначально скрыто) -->
-        <div class="input-group" id="email-group" style="display: none;">
+        <div class="input-group" id="email-group">
             <label for="email">Email</label>
             <input type="email" id="email">
         </div>
@@ -127,7 +142,7 @@
         <button class="action-btn" id="submit-btn">Log In</button>
 
         <div class="toggle-text" id="toggle-container">
-            Don't have an account? <a id="toggle-link">Sign up</a>
+            Don't have an account? <a id="toggle-link" href="#">Sign up</a>
         </div>
     </div>
 
@@ -145,34 +160,24 @@
 
         let isLoginMode = true;
 
-        toggleLink.addEventListener('click', () => {
+        function updateMode(e) {
+            e.preventDefault();
             isLoginMode = !isLoginMode;
 
             if (isLoginMode) {
-                // Переключение на Вход
                 submitBtn.textContent = 'Log In';
-                emailGroup.style.display = 'none';
+                emailGroup.classList.remove('show');
                 toggleContainer.innerHTML = 'Don\'t have an account? <a id="toggle-link" href="#">Sign up</a>';
             } else {
-                // Переключение на Регистрацию
                 submitBtn.textContent = 'Sign Up';
-                emailGroup.style.display = 'block';
+                emailGroup.classList.add('show');
                 toggleContainer.innerHTML = 'Already have an account? <a id="toggle-link" href="#">Log in</a>';
             }
 
-            // Перепривязываем слушатель событий к новому созданному элементу ссылки
-            document.getElementById('toggle-link').addEventListener('click', (e) => {
-                e.preventDefault();
-                toggleLink.click(); // Повторный вызов логики
-            });
-        });
+            document.getElementById('toggle-link').addEventListener('click', updateMode);
+        }
 
-        // Предотвращаем перезагрузку при клике на созданную ссылку через JS
-        document.addEventListener('click', function(e) {
-            if (e.target && e.target.id === 'toggle-link') {
-                e.preventDefault();
-            }
-        });
+        toggleLink.addEventListener('click', updateMode);
     </script>
 </body>
 </html>
