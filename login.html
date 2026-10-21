@@ -16,44 +16,44 @@
             height: 100vh;
             margin: 0;
             box-sizing: border-box;
+            position: relative;
         }
         .container {
-            width: 360px;
+            width: 440px;
             background-color: #22222b;
             display: flex;
             flex-direction: column;
             align-items: center;
-            border-radius: 8px;
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
-            padding: 30px 20px 20px 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+            padding: 40px 30px 30px 30px;
             box-sizing: border-box;
-            margin: auto;
         }
         .logo {
-            width: 50px;
-            height: 50px;
-            margin-bottom: 25px;
+            width: 80px;
+            height: 80px;
+            margin-bottom: 30px;
             object-fit: contain;
         }
         .input-group {
             width: 100%;
-            margin-bottom: 15px;
+            margin-bottom: 20px;
             transition: all 0.3s ease;
         }
         .input-group label {
             display: block;
-            margin-bottom: 5px;
-            font-size: 0.9rem;
+            margin-bottom: 8px;
+            font-size: 1rem;
             color: #b3b3b9;
         }
         .input-group input {
             width: 100%;
-            padding: 10px;
+            padding: 12px;
             background-color: #18181f;
             border: 1px solid #33333d;
-            border-radius: 4px;
+            border-radius: 6px;
             color: #ffffff;
-            font-size: 1rem;
+            font-size: 1.1rem;
             box-sizing: border-box;
         }
         .input-group input:focus {
@@ -68,18 +68,18 @@
             transition: max-height 0.3s ease, opacity 0.3s ease, margin-bottom 0.3s ease;
         }
         #email-group.show {
-            max-height: 100px;
+            max-height: 120px;
             opacity: 1;
-            margin-bottom: 15px;
+            margin-bottom: 20px;
         }
         .action-btn {
             width: 100%;
-            padding: 10px;
+            padding: 14px;
             background-color: #3b3bf9;
             border: none;
-            border-radius: 4px;
+            border-radius: 6px;
             color: #ffffff;
-            font-size: 1rem;
+            font-size: 1.1rem;
             font-weight: bold;
             cursor: pointer;
             margin-top: 10px;
@@ -89,8 +89,8 @@
             background-color: #3131d9;
         }
         .toggle-text {
-            margin-top: 15px;
-            font-size: 0.85rem;
+            margin-top: 20px;
+            font-size: 0.95rem;
             color: #b3b3b9;
             text-align: center;
         }
@@ -104,15 +104,18 @@
             text-decoration: underline;
         }
         .footer-links {
-            margin-top: auto;
-            margin-bottom: 20px;
+            position: absolute;
+            bottom: 25px;
+            left: 40px;
+            right: 40px;
             display: flex;
-            gap: 20px;
+            justify-content: space-between;
+            align-items: center;
         }
         .footer-links a {
             color: #7b7b85;
             text-decoration: none;
-            font-size: 0.85rem;
+            font-size: 1rem;
         }
         .footer-links a:hover {
             color: #ffffff;
