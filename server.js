@@ -58,11 +58,23 @@ async function initDB() {
     await run(`CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, userId TEXT NOT NULL, createdAt INTEGER, expiresAt INTEGER)`);
     const sessionInfo = await db.execute('PRAGMA table_info(sessions)');
     const sessionUserId = sessionInfo.rows.find((c) => String(c.name) === 'userId');
-    if (sessionUserId && String(sessionUserId.type || '').toUpperCase() !== 'TEXT') {
+    const sessionForeignKeys = await db.execute('PRAGMA foreign_key_list(sessions)');
+    const sessionDefinition = await db.execute({
+        sql: `SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'sessions'`, args: []
+    });
+    const sessionSql = String(sessionDefinition.rows[0]?.sql || '').toUpperCase();
+    // Legacy deployments may still tie session IDs to the numeric users table or use
+    // strict/foreign-key constraints. Rebuild without legacy constraints so text IDs
+    // such as "knqw" are valid, preserving all session rows.
+    const rebuildSessions = !sessionUserId
+        || String(sessionUserId.type || '').trim().toUpperCase() !== 'TEXT'
+        || sessionForeignKeys.rows.length > 0
+        || sessionSql.includes('STRICT');
+    if (rebuildSessions) {
         await db.batch([
             { sql: 'DROP TABLE IF EXISTS sessions_text_migration', args: [] },
-            { sql: `CREATE TABLE sessions_text_migration (id TEXT PRIMARY KEY, userId TEXT NOT NULL, createdAt INTEGER, expiresAt INTEGER)`, args: [] },
-            { sql: `INSERT INTO sessions_text_migration (id, userId, createdAt, expiresAt) SELECT id, CAST(userId AS TEXT), createdAt, expiresAt FROM sessions`, args: [] },
+            { sql: 'CREATE TABLE sessions_text_migration (id TEXT PRIMARY KEY, userId TEXT NOT NULL, createdAt INTEGER, expiresAt INTEGER)', args: [] },
+            { sql: 'INSERT INTO sessions_text_migration (id, userId, createdAt, expiresAt) SELECT CAST(id AS TEXT), CAST(userId AS TEXT), createdAt, expiresAt FROM sessions', args: [] },
             { sql: 'DROP TABLE sessions', args: [] },
             { sql: 'ALTER TABLE sessions_text_migration RENAME TO sessions', args: [] }
         ], 'write');
