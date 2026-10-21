@@ -241,33 +241,49 @@
 
         toggleLink.addEventListener('click', updateMode);
 
-        // Проверка доступности юзернейма в реальном времени
-        const takenUsernames = ['admin', 'user', 'root', 'starfall', 'test'];
-        usernameInput.addEventListener('input', () => {
-            const val = usernameInput.value.trim().toLowerCase();
+        // Проверка доступности юзернейма через бэкенд в реальном времени
+        usernameInput.addEventListener('input', async () => {
+            const val = usernameInput.value.trim();
             if (val.length === 0) {
                 usernameInput.classList.remove('error', 'success');
                 usernameStatus.style.display = 'none';
                 return;
             }
 
-            if (takenUsernames.includes(val)) {
-                usernameInput.classList.add('error');
-                usernameInput.classList.remove('success');
-                usernameStatus.textContent = 'Username is already taken';
-                usernameStatus.className = 'status-msg error';
+            if (!isLoginMode) {
+                try {
+                    const response = await fetch(`/api/check-username?username=${encodeURIComponent(val)}`);
+                    const data = await response.json();
+
+                    if (!data.available) {
+                        usernameInput.classList.add('error');
+                        usernameInput.classList.remove('success');
+                        usernameStatus.textContent = 'Username is already taken';
+                        usernameStatus.className = 'status-msg error';
+                    } else {
+                        usernameInput.classList.remove('error');
+                        usernameInput.classList.add('success');
+                        usernameStatus.textContent = 'Username is available';
+                        usernameStatus.className = 'status-msg success';
+                    }
+                } catch (err) {
+                    console.error(err);
+                }
             } else {
-                usernameInput.classList.remove('error');
-                usernameInput.classList.add('success');
-                usernameStatus.textContent = 'Username is available';
-                usernameStatus.className = 'status-msg success';
+                usernameInput.classList.remove('error', 'success');
+                usernameStatus.style.display = 'none';
             }
         });
 
-        submitBtn.addEventListener('click', (e) => {
+        submitBtn.addEventListener('click', async (e) => {
             e.preventDefault();
             const usernameVal = usernameInput.value.trim();
             const passwordVal = document.getElementById('password').value.trim();
+
+            if (!usernameVal || !passwordVal) {
+                alert('Please fill in all fields');
+                return;
+            }
 
             if (!isLoginMode) {
                 const emailVal = emailInput.value.trim();
@@ -275,28 +291,47 @@
                 const fakeMxBlocklist = ['test.com', 'fakemail.com', 'asdf.com', 'mailinator.com'];
                 const domain = emailVal.split('@')[1];
 
-                let hasError = false;
-
                 if (!emailRegex.test(emailVal) || (domain && fakeMxBlocklist.includes(domain.toLowerCase()))) {
                     emailInput.classList.add('error');
                     emailError.style.display = 'block';
-                    hasError = true;
+                    return;
                 } else {
                     emailInput.classList.remove('error');
                     emailError.style.display = 'none';
                 }
 
-                if (usernameInput.classList.contains('error') || usernameVal === '') {
-                    usernameInput.classList.add('error');
-                    hasError = true;
-                }
-
-                if (!hasError && passwordVal !== '') {
-                    window.location.href = 'starfall.html';
+                try {
+                    const response = await fetch('/api/register', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ username: usernameVal, email: emailVal, password: passwordVal })
+                    });
+                    const data = await response.json();
+                    if (data.success) {
+                        window.location.href = 'starfall.html';
+                    } else {
+                        alert('Registration error: ' + data.error);
+                    }
+                } catch (err) {
+                    console.error(err);
+                    alert('Server connection error');
                 }
             } else {
-                if (usernameVal !== '' && passwordVal !== '') {
-                    window.location.href = 'starfall.html';
+                try {
+                    const response = await fetch('/api/login', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ username: usernameVal, password: passwordVal })
+                    });
+                    const data = await response.json();
+                    if (data.success) {
+                        window.location.href = 'starfall.html';
+                    } else {
+                        alert('Invalid username or password');
+                    }
+                } catch (err) {
+                    console.error(err);
+                    alert('Server connection error');
                 }
             }
         });
