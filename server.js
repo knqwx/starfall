@@ -462,10 +462,8 @@ app.post('/api/admin/users/:id/change-id', route(requireUser), route(async (req,
     const newId = parseUserId(String((req.body || {}).newId || '').trim());
     if (!oldId || !newId || !Number.isSafeInteger(newId)) return res.status(400).json({ error: 'Enter a valid positive numeric ID (up to 15 digits).' });
     if (oldId === newId) return res.status(400).json({ error: 'That account already has this ID.' });
-    if (oldId === Number(req.user.id)) return res.status(400).json({ error: 'Your own account ID cannot be changed here.' });
     const targetResult = await db.execute({ sql: 'SELECT id, username FROM users WHERE id = ?', args: [oldId] });
     if (!targetResult.rows.length) return res.status(404).json({ error: 'User not found.' });
-    if (isAdminUser(targetResult.rows[0])) return res.status(400).json({ error: 'The admin account ID cannot be changed.' });
     const exists = await db.execute({ sql: 'SELECT 1 FROM users WHERE id = ?', args: [newId] });
     if (exists.rows.length) return res.status(409).json({ error: 'That ID is already in use.' });
     await db.batch([
