@@ -160,10 +160,6 @@
                 <input type="password" id="password-input" autocomplete="current-password">
             </div>
 
-            <div class="signup-only" id="age-wrap">
-                <label class="age-check"><input type="checkbox" id="age-checkbox"> <span>I am at least 13 years old.</span></label>
-            </div>
-
             <button type="submit" class="action-btn" id="submit-btn">Log In</button>
 
             <div class="toggle-text">
@@ -226,7 +222,6 @@
         errorMsg.style.display = 'none';
         setStatus(usernameStatus, '', ''); setStatus(emailStatus, '', '');
         $('email-group').classList.toggle('show', !loginMode);
-        $('age-wrap').classList.toggle('show', !loginMode);
         if (loginMode) {
             mainLabel.textContent = 'Username or email';
             submitBtn.textContent = 'Log In';
@@ -294,11 +289,10 @@
                 const username = mainInput.value.trim(), email = emailInput.value.trim().toLowerCase();
                 if (!username || !email || !password) { showError('Please fill in all fields.'); return; }
                 if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) { showError('Please enter a valid email address.'); return; }
-                if (!$('age-checkbox').checked) { showError('You must confirm that you are at least 13 years old.'); return; }
                 $('loading-title').textContent = 'Creating your account…';
                 loading.classList.add('active');
                 submitBtn.textContent = 'Creating account…';
-                result = await api('/api/signup', { username, email, password, ageConfirmed: true });
+                result = await api('/api/signup', { username, email, password });
             } else {
                 const id = mainInput.value.trim();
                 if (!id || !password) { showError('Please fill in all fields.'); return; }

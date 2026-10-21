@@ -5,54 +5,167 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Starfall</title>
     <style>
+        * { box-sizing: border-box; }
         html { visibility: hidden; } /* revealed once the login has been checked */
         body {
             background-color: #18181f;
             color: #ffffff;
             font-family: Arial, sans-serif;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
             margin: 0;
+            min-height: 100vh;
+            min-height: 100dvh;
         }
-        h1 { font-size: 3rem; letter-spacing: 2px; margin: 0 0 12px; }
-        #who { color: #b3b3b9; margin-bottom: 18px; min-height: 1.2em; }
-        #logout {
-            background: #3b3bf9; color: #fff; border: 0; border-radius: 6px;
-            padding: 10px 22px; font-size: 1rem; font-weight: bold; cursor: pointer;
+        .topbar { display: flex; justify-content: flex-end; gap: 10px; padding: 14px 16px; flex-wrap: wrap; }
+        .top-btn {
+            background: #22222b; color: #fff; border: 1px solid #33333d; border-radius: 6px;
+            padding: 9px 16px; font-size: 0.95rem; font-weight: bold; cursor: pointer;
         }
-        #logout:hover { background: #3131d9; }
+        .top-btn:hover { background: #2c2c38; border-color: #555566; }
+        .top-btn[hidden] { display: none; }
+        .hero { display: flex; justify-content: center; align-items: center; min-height: calc(100vh - 80px); min-height: calc(100dvh - 80px); }
+        h1 { font-size: 3rem; letter-spacing: 2px; margin: 0; }
+
+        .overlay { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.75); display: none; align-items: center; justify-content: center; padding: 16px; z-index: 500; }
+        .overlay.active { display: flex; }
+        .window {
+            position: relative; background: #22222b; border-radius: 12px; padding: 26px clamp(16px, 5vw, 26px);
+            width: 640px; max-width: 100%; max-height: 88vh; overflow-y: auto; box-shadow: 0 4px 30px rgba(0, 0, 0, 0.6);
+        }
+        .window.small { width: 400px; }
+        .window h2 { margin: 0 0 16px; font-size: 1.3rem; padding-right: 30px; }
+        .close-x { position: absolute; top: 10px; right: 14px; background: none; border: none; color: #aaa; font-size: 28px; line-height: 1; cursor: pointer; }
+        .close-x:hover { color: #fff; }
+
+        .profile-row { display: flex; justify-content: space-between; gap: 16px; padding: 10px 0; border-bottom: 1px solid #33333d; font-size: 0.95rem; }
+        .profile-row span:first-child { color: #9a9aa5; }
+        .profile-row span:last-child { text-align: right; overflow-wrap: anywhere; }
+        .btn { width: 100%; margin-top: 18px; padding: 12px; background: #3b3bf9; color: #fff; border: 0; border-radius: 6px; font-size: 1rem; font-weight: bold; cursor: pointer; }
+        .btn:hover { background: #3131d9; }
+
+        .search { width: 100%; padding: 10px; background: #18181f; border: 1px solid #33333d; border-radius: 6px; color: #fff; font-size: 1rem; margin-bottom: 8px; }
+        .search:focus { outline: none; border-color: #555566; }
+        .count { color: #9a9aa5; font-size: 0.8rem; margin-bottom: 10px; }
+        .table-wrap { overflow-x: auto; border: 1px solid #33333d; border-radius: 6px; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+        th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid #2d2d38; white-space: nowrap; }
+        th { color: #9a9aa5; font-weight: normal; background: #1d1d26; position: sticky; top: 0; }
+        tr:last-child td { border-bottom: 0; }
+        .msg { color: #9a9aa5; text-align: center; padding: 18px 0; font-size: 0.9rem; }
+        .msg.err { color: #ff6b6b; }
     </style>
 </head>
 <body>
-    <h1>Starfall</h1>
-    <div id="who"></div>
-    <button id="logout" type="button">Log out</button>
+    <div class="topbar">
+        <button class="top-btn" id="users-btn" type="button" hidden>Users database</button>
+        <button class="top-btn" id="profile-btn" type="button">Profile</button>
+    </div>
+
+    <div class="hero"><h1>Starfall</h1></div>
+
+    <!-- Profile -->
+    <div class="overlay" id="profile-overlay">
+        <div class="window small" role="dialog" aria-modal="true" aria-labelledby="profile-title">
+            <button class="close-x" type="button" data-close="profile-overlay" aria-label="Close">&times;</button>
+            <h2 id="profile-title">Profile</h2>
+            <div class="profile-row"><span>Username</span><span id="p-username">-</span></div>
+            <div class="profile-row"><span>Email</span><span id="p-email">-</span></div>
+            <div class="profile-row"><span>Member since</span><span id="p-joined">-</span></div>
+            <button class="btn" id="logout-btn" type="button">Log out</button>
+        </div>
+    </div>
+
+    <!-- Users database (only knqw; the server checks this too) -->
+    <div class="overlay" id="users-overlay">
+        <div class="window" role="dialog" aria-modal="true" aria-labelledby="users-title">
+            <button class="close-x" type="button" data-close="users-overlay" aria-label="Close">&times;</button>
+            <h2 id="users-title">Users database</h2>
+            <input class="search" id="users-search" type="search" placeholder="Search username or email" autocomplete="off">
+            <div class="count" id="users-count"></div>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>ID</th><th>Username</th><th>Email</th><th>Joined</th></tr></thead>
+                    <tbody id="users-body"></tbody>
+                </table>
+            </div>
+            <div class="msg" id="users-msg"></div>
+        </div>
+    </div>
 
 <script>
 (async function () {
+    const $ = (id) => document.getElementById(id);
     const RENDER_API = 'https://starfall-rejh.onrender.com';
     const API_BASE = (location.hostname.endsWith('.onrender.com') || location.hostname === 'localhost' || location.hostname === '127.0.0.1') ? '' : RENDER_API;
     const TOKEN_KEY = 'sf_token';
     const getToken = () => { try { return localStorage.getItem(TOKEN_KEY) || ''; } catch (e) { return ''; } };
     const headers = () => { const t = getToken(); return t ? { 'X-Session': t, 'Accept': 'application/json' } : { 'Accept': 'application/json' }; };
-    const reveal = () => { document.documentElement.style.visibility = 'visible'; };
+    const goLogin = () => { try { localStorage.removeItem(TOKEN_KEY); } catch (e) {} location.replace('login.html'); };
+    const fmtDate = (ms) => ms ? new Date(ms).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : '-';
 
-    document.getElementById('logout').addEventListener('click', async () => {
+    // ----- overlays -----
+    const open = (id) => $(id).classList.add('active');
+    const close = (id) => $(id).classList.remove('active');
+    document.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => close(b.dataset.close)));
+    document.querySelectorAll('.overlay').forEach((o) => o.addEventListener('click', (e) => { if (e.target === o) close(o.id); }));
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') document.querySelectorAll('.overlay.active').forEach((o) => close(o.id)); });
+
+    // ----- profile -----
+    $('profile-btn').addEventListener('click', () => open('profile-overlay'));
+    $('logout-btn').addEventListener('click', async () => {
+        $('logout-btn').disabled = true;
         try { await fetch(API_BASE + '/api/logout', { method: 'POST', headers: headers() }); } catch (e) {}
-        try { localStorage.removeItem(TOKEN_KEY); } catch (e) {}
-        location.replace('login.html');
+        goLogin();
     });
 
+    // ----- users database -----
+    let allUsers = [];
+    function renderUsers() {
+        const q = $('users-search').value.trim().toLowerCase();
+        const rows = q ? allUsers.filter((u) => u.username.toLowerCase().includes(q) || u.email.toLowerCase().includes(q)) : allUsers;
+        const body = $('users-body');
+        body.textContent = '';
+        rows.forEach((u) => {
+            const tr = document.createElement('tr');
+            [u.id, u.username, u.email || '-', fmtDate(u.joinedAt)].forEach((v) => { const td = document.createElement('td'); td.textContent = String(v); tr.appendChild(td); });
+            body.appendChild(tr);
+        });
+        $('users-count').textContent = 'Showing ' + rows.length + ' of ' + allUsers.length + ' users';
+        $('users-msg').className = 'msg';
+        $('users-msg').textContent = rows.length ? '' : 'No users found.';
+    }
+    async function loadUsers() {
+        $('users-msg').className = 'msg';
+        $('users-msg').textContent = 'Loading...';
+        $('users-body').textContent = '';
+        $('users-count').textContent = '';
+        try {
+            const r = await fetch(API_BASE + '/api/admin/users', { headers: headers(), cache: 'no-store' });
+            if (r.status === 401) return goLogin();
+            const d = await r.json().catch(() => ({}));
+            if (!r.ok) { $('users-msg').className = 'msg err'; $('users-msg').textContent = d.error || 'Could not load users.'; return; }
+            allUsers = d.users || [];
+            renderUsers();
+        } catch (e) {
+            $('users-msg').className = 'msg err';
+            $('users-msg').textContent = 'Cannot reach the server.';
+        }
+    }
+    $('users-btn').addEventListener('click', () => { open('users-overlay'); loadUsers(); });
+    $('users-search').addEventListener('input', renderUsers);
+
+    // ----- who is logged in -----
     try {
         const r = await fetch(API_BASE + '/api/me', { headers: headers(), cache: 'no-store' });
-        if (r.status === 401) { try { localStorage.removeItem(TOKEN_KEY); } catch (e) {} location.replace('login.html'); return; }
+        if (r.status === 401) return goLogin();
         const d = await r.json().catch(() => ({}));
-        if (d.username) document.getElementById('who').textContent = 'Signed in as ' + d.username;
+        if (d.username) {
+            $('p-username').textContent = d.username;
+            $('p-email').textContent = d.email || '-';
+            $('p-joined').textContent = fmtDate(d.joinedAt);
+            $('users-btn').hidden = !d.isAdmin; // cosmetic only: /api/admin/users refuses everyone else
+        }
     } catch (e) { /* server unreachable: show the page instead of bouncing the user */ }
-    reveal();
+    document.documentElement.style.visibility = 'visible';
 })();
 </script>
 </body>

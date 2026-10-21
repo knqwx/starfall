@@ -148,7 +148,7 @@ async function checkEmail(email) {
 
 // Names that look like staff / the service itself (case, . _ - and 0/1/3/4/5/7 look-alikes are ignored)
 const RESERVED_EXACT = new Set(['admin', 'administrator', 'support', 'staff', 'moderator', 'mod', 'mods', 'owner', 'system', 'official', 'root', 'help', 'helpdesk', 'service', 'team',
-    'security', 'billing', 'verify', 'verified', 'starfall', 'null', 'undefined', 'anonymous', 'sysadmin', 'superuser', 'webmaster', 'contact', 'info', 'abuse', 'postmaster', 'noreply']);
+    'security', 'billing', 'verify', 'verified', 'starfall', 'knqw', 'null', 'undefined', 'anonymous', 'sysadmin', 'superuser', 'webmaster', 'contact', 'info', 'abuse', 'postmaster', 'noreply']);
 const RESERVED_PREFIX = ['admin', 'administrator', 'moderator', 'starfall', 'officialsupport'];
 const RESERVED_AFFIX = ['the', 'real', 'official', 'im', 'iam', 'mr', 'ms', 'x', 'xx'];
 const LEET = { 0: 'o', 1: 'i', 3: 'e', 4: 'a', 5: 's', 7: 't' };
@@ -263,7 +263,7 @@ const requestTokens = (req) => {
 async function currentUser(req) {
     for (const raw of requestTokens(req)) {
         const r = await db.execute({
-            sql: 'SELECT u.id, u.username, u.email FROM sessions s JOIN users u ON u.id = s.userId WHERE s.id = ? AND s.expiresAt > ?',
+            sql: 'SELECT u.id, u.username, u.email, u.joinedAt FROM sessions s JOIN users u ON u.id = s.userId WHERE s.id = ? AND s.expiresAt > ?',
             args: [sha256(raw), Date.now()]
         });
         if (r.rows.length) return { ...r.rows[0], token: raw };
@@ -283,8 +283,28 @@ app.get('/api/health', route(async (req, res) => {
     try { await db.execute('SELECT 1'); res.json({ ok: true }); } catch (e) { res.status(500).json({ ok: false }); }
 }));
 
+// The only account allowed to see the users database. Usernames are unique ignoring case and "knqw" is reserved, so nobody else can register it.
+const ADMIN_USERNAME = 'knqw';
+const isAdminUser = (u) => String(u && u.username || '').toLowerCase() === ADMIN_USERNAME;
+
 app.get('/api/me', route(requireUser), route(async (req, res) => {
-    res.json({ username: String(req.user.username) });
+    const u = req.user;
+    res.json({
+        username: String(u.username),
+        email: u.email ? String(u.email) : '',
+        joinedAt: Number(u.joinedAt) || 0,
+        isAdmin: isAdminUser(u)
+    });
+}));
+
+// Users database: checked on the server, so hiding/showing the button in the page is only cosmetic. Never returns passwords or hashes.
+app.get('/api/admin/users', route(requireUser), route(async (req, res) => {
+    if (!isAdminUser(req.user)) return res.status(403).json({ error: 'Not allowed.' });
+    const r = await db.execute('SELECT id, username, email, joinedAt FROM users ORDER BY id');
+    res.json({
+        total: r.rows.length,
+        users: r.rows.map((x) => ({ id: Number(x.id), username: String(x.username), email: x.email ? String(x.email) : '', joinedAt: Number(x.joinedAt) || 0 }))
+    });
 }));
 
 app.get('/api/check-username', route(async (req, res) => {
@@ -318,7 +338,6 @@ app.post('/api/signup', route(async (req, res) => {
 
         const uErr = checkUsername(username); if (uErr) return fail(uErr);
         const eErr = await checkEmail(email); if (eErr) return fail(eErr);
-        if (b.ageConfirmed !== true) return fail('You must confirm that you are at least 13 years old.');
 
         // one account per day: per IP and per device cookie
         const now = Date.now();
