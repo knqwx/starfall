@@ -68,18 +68,10 @@
             color: #ffffff !important;
             font-size: 1rem;
             box-sizing: border-box;
-            -webkit-text-fill-color: #ffffff;
-        }
-        .input-group input:-webkit-autofill,
-        .input-group input:-webkit-autofill:hover, 
-        .input-group input:-webkit-autofill:focus {
-            -webkit-box-shadow: 0 0 0 30px #18181f inset !important;
-            -webkit-text-fill-color: #ffffff !important;
         }
         .input-group input:focus {
             outline: none;
             border-color: #555566;
-            background-color: #18181f !important;
         }
         .input-group input.error {
             border-color: #f93b3b;
@@ -142,9 +134,6 @@
             font-weight: bold;
             cursor: pointer;
         }
-        .toggle-text a:hover {
-            text-decoration: underline;
-        }
         .footer-links {
             position: absolute;
             bottom: 35px;
@@ -202,7 +191,32 @@
         <a href="#">Terms of Service</a>
     </div>
 
-    <script>
+    <script type="module">
+        import { createClient } from "https://esm.sh/@libsql/client@0.14.0";
+
+        // Вставь свои данные от Turso прямо сюда
+        const db = createClient({
+            url: "ТВОЙ_TURSO_URL",
+            authToken: "ТВОЙ_TURSO_TOKEN"
+        });
+
+        // Создаем таблицу автоматически при загрузке, если её нет
+        async function initDB() {
+            try {
+                await db.execute(`
+                    CREATE TABLE IF NOT EXISTS users (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        username TEXT UNIQUE NOT NULL,
+                        email TEXT,
+                        password TEXT NOT NULL
+                    )
+                `);
+            } catch (err) {
+                console.error("DB init error:", err);
+            }
+        }
+        initDB();
+
         const submitBtn = document.getElementById('submit-btn');
         const emailGroup = document.getElementById('email-group');
         const toggleContainer = document.getElementById('toggle-container');
@@ -241,7 +255,7 @@
 
         toggleLink.addEventListener('click', updateMode);
 
-        // Проверка доступности юзернейма через бэкенд в реальном времени
+        // Проверка доступности ника в реальном времени
         usernameInput.addEventListener('input', async () => {
             const val = usernameInput.value.trim();
             if (val.length === 0) {
@@ -252,10 +266,12 @@
 
             if (!isLoginMode) {
                 try {
-                    const response = await fetch(`/api/check-username?username=${encodeURIComponent(val)}`);
-                    const data = await response.json();
+                    const result = await db.execute({
+                        sql: 'SELECT * FROM users WHERE username = ?',
+                        args: [val]
+                    });
 
-                    if (!data.available) {
+                    if (result.rows.length > 0) {
                         usernameInput.classList.add('error');
                         usernameInput.classList.remove('success');
                         usernameStatus.textContent = 'Username is already taken';
@@ -275,6 +291,7 @@
             }
         });
 
+        // Регистрация и Вход
         submitBtn.addEventListener('click', async (e) => {
             e.preventDefault();
             const usernameVal = usernameInput.value.trim();
@@ -288,10 +305,8 @@
             if (!isLoginMode) {
                 const emailVal = emailInput.value.trim();
                 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-                const fakeMxBlocklist = ['test.com', 'fakemail.com', 'asdf.com', 'mailinator.com'];
-                const domain = emailVal.split('@')[1];
 
-                if (!emailRegex.test(emailVal) || (domain && fakeMxBlocklist.includes(domain.toLowerCase()))) {
+                if (!emailRegex.test(emailVal)) {
                     emailInput.classList.add('error');
                     emailError.style.display = 'block';
                     return;
@@ -301,37 +316,28 @@
                 }
 
                 try {
-                    const response = await fetch('/api/register', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ username: usernameVal, email: emailVal, password: passwordVal })
+                    await db.execute({
+                        sql: 'INSERT INTO users (username, email, password) VALUES (?, ?, ?)',
+                        args: [usernameVal, emailVal, passwordVal]
                     });
-                    const data = await response.json();
-                    if (data.success) {
-                        window.location.href = 'starfall.html';
-                    } else {
-                        alert('Registration error: ' + data.error);
-                    }
+                    window.location.href = 'starfall.html';
                 } catch (err) {
-                    console.error(err);
-                    alert('Server connection error');
+                    alert('Registration error: Username or email already exists');
                 }
             } else {
                 try {
-                    const response = await fetch('/api/login', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ username: usernameVal, password: passwordVal })
+                    const result = await db.execute({
+                        sql: 'SELECT * FROM users WHERE username = ? AND password = ?',
+                        args: [usernameVal, passwordVal]
                     });
-                    const data = await response.json();
-                    if (data.success) {
+
+                    if (result.rows.length > 0) {
                         window.location.href = 'starfall.html';
                     } else {
                         alert('Invalid username or password');
                     }
                 } catch (err) {
-                    console.error(err);
-                    alert('Server connection error');
+                    alert('Login error');
                 }
             }
         });
