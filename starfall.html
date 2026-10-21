@@ -52,6 +52,16 @@
         tr:last-child td { border-bottom: 0; }
         .msg { color: #9a9aa5; text-align: center; padding: 18px 0; font-size: 0.9rem; }
         .msg.err { color: #ff6b6b; }
+        [hidden] { display: none !important; }
+        .overlay.front { z-index: 600; }
+        tbody tr { cursor: pointer; }
+        tbody tr:hover td, tbody tr:focus td { background: #2a2a36; outline: none; }
+        .btn.danger { background: #d93636; }
+        .btn.danger:hover { background: #bd2c2c; }
+        .btn:disabled { opacity: 0.5; cursor: default; }
+        .note { color: #9a9aa5; font-size: 0.85rem; margin-top: 16px; text-align: center; }
+        .confirm-text { color: #cfcfd6; font-size: 0.85rem; line-height: 1.45; margin: 16px 0 10px; }
+        .confirm-text b { color: #fff; overflow-wrap: anywhere; }
     </style>
 </head>
 <body>
@@ -91,6 +101,29 @@
         </div>
     </div>
 
+    <!-- One account's profile (opened from the users database) -->
+    <div class="overlay front" id="detail-overlay">
+        <div class="window small" role="dialog" aria-modal="true" aria-labelledby="detail-title">
+            <button class="close-x" type="button" data-close="detail-overlay" aria-label="Close">&times;</button>
+            <h2 id="detail-title">User profile</h2>
+            <div class="msg" id="d-msg"></div>
+            <div id="d-body" hidden>
+                <div class="profile-row"><span>ID</span><span id="d-id">-</span></div>
+                <div class="profile-row"><span>Username</span><span id="d-username">-</span></div>
+                <div class="profile-row"><span>Email</span><span id="d-email">-</span></div>
+                <div class="profile-row"><span>Member since</span><span id="d-joined">-</span></div>
+                <div class="profile-row"><span>Active sessions</span><span id="d-sessions">-</span></div>
+                <button class="btn danger" id="d-delete-btn" type="button">Delete account</button>
+                <div class="note" id="d-self-note" hidden>This is your own account. It cannot be deleted here.</div>
+                <div id="d-confirm" hidden>
+                    <div class="confirm-text">This permanently deletes the account and signs it out everywhere. It cannot be undone. Type <b id="d-confirm-name"></b> to confirm.</div>
+                    <input class="search" id="d-confirm-input" type="text" autocomplete="off" autocapitalize="none" spellcheck="false">
+                    <button class="btn danger" id="d-confirm-btn" type="button" disabled>Delete permanently</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
 <script>
 (async function () {
     const $ = (id) => document.getElementById(id);
@@ -126,7 +159,11 @@
         body.textContent = '';
         rows.forEach((u) => {
             const tr = document.createElement('tr');
+            tr.tabIndex = 0;
+            tr.title = 'Open profile';
             [u.id, u.username, u.email || '-', fmtDate(u.joinedAt)].forEach((v) => { const td = document.createElement('td'); td.textContent = String(v); tr.appendChild(td); });
+            tr.addEventListener('click', () => openUser(u.id));
+            tr.addEventListener('keydown', (e) => { if (e.key === 'Enter') openUser(u.id); });
             body.appendChild(tr);
         });
         $('users-count').textContent = 'Showing ' + rows.length + ' of ' + allUsers.length + ' users';
@@ -152,6 +189,60 @@
     }
     $('users-btn').addEventListener('click', () => { open('users-overlay'); loadUsers(); });
     $('users-search').addEventListener('input', renderUsers);
+
+    // ----- one account's profile + delete (the server re-checks that this is knqw) -----
+    let detail = null;
+    const setDetailMsg = (text, err) => { $('d-msg').className = 'msg' + (err ? ' err' : ''); $('d-msg').textContent = text || ''; };
+    async function openUser(id) {
+        detail = null;
+        $('d-body').hidden = true;
+        $('d-confirm').hidden = true;
+        $('d-confirm-input').value = '';
+        setDetailMsg('Loading...');
+        open('detail-overlay');
+        try {
+            const r = await fetch(API_BASE + '/api/admin/users/' + encodeURIComponent(id), { headers: headers(), cache: 'no-store' });
+            if (r.status === 401) return goLogin();
+            const d = await r.json().catch(() => ({}));
+            if (!r.ok) { setDetailMsg(d.error || 'Could not load this profile.', true); return; }
+            detail = d;
+            $('detail-title').textContent = d.username;
+            $('d-id').textContent = d.id;
+            $('d-username').textContent = d.username;
+            $('d-email').textContent = d.email || '-';
+            $('d-joined').textContent = fmtDate(d.joinedAt);
+            $('d-sessions').textContent = d.activeSessions;
+            $('d-delete-btn').hidden = !!d.isSelf;
+            $('d-self-note').hidden = !d.isSelf;
+            $('d-confirm-name').textContent = d.username;
+            setDetailMsg('');
+            $('d-body').hidden = false;
+        } catch (e) { setDetailMsg('Cannot reach the server.', true); }
+    }
+    $('d-delete-btn').addEventListener('click', () => {
+        $('d-confirm').hidden = false;
+        $('d-delete-btn').hidden = true;
+        $('d-confirm-input').value = '';
+        $('d-confirm-btn').disabled = true;
+        $('d-confirm-input').focus();
+    });
+    $('d-confirm-input').addEventListener('input', () => {
+        $('d-confirm-btn').disabled = !detail || $('d-confirm-input').value !== detail.username;
+    });
+    $('d-confirm-btn').addEventListener('click', async () => {
+        if (!detail || $('d-confirm-input').value !== detail.username) return;
+        $('d-confirm-btn').disabled = true;
+        try {
+            const r = await fetch(API_BASE + '/api/admin/users/' + encodeURIComponent(detail.id), { method: 'DELETE', headers: headers() });
+            if (r.status === 401) return goLogin();
+            const d = await r.json().catch(() => ({}));
+            if (!r.ok) { $('d-confirm-btn').disabled = false; setDetailMsg(d.error || 'Could not delete this account.', true); return; }
+            allUsers = allUsers.filter((u) => u.id !== detail.id);
+            detail = null;
+            close('detail-overlay');
+            renderUsers();
+        } catch (e) { $('d-confirm-btn').disabled = false; setDetailMsg('Cannot reach the server.', true); }
+    });
 
     // ----- who is logged in -----
     try {

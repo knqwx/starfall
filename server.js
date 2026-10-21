@@ -95,7 +95,7 @@ app.use((req, res, next) => {
     if (origin && ALLOWED_ORIGINS.has(origin)) {
         res.setHeader('Access-Control-Allow-Origin', origin);
         res.setHeader('Access-Control-Allow-Credentials', 'true');
-        res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+        res.setHeader('Access-Control-Allow-Methods', 'GET,POST,DELETE,OPTIONS');
         res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Accept, X-Session');
         res.setHeader('Access-Control-Max-Age', '600');
     }
@@ -407,6 +407,39 @@ app.post('/api/logout', route(async (req, res) => {
     } catch (e) { console.error('logout error:', e); }
     clearCookie(res, 'sid');
     res.json({ ok: true });
+}));
+
+const parseUserId = (s) => (/^\d{1,15}$/.test(String(s)) ? Number(s) : 0);
+
+// One account's profile, as seen by the admin.
+app.get('/api/admin/users/:id', route(requireUser), route(async (req, res) => {
+    if (!isAdminUser(req.user)) return res.status(403).json({ error: 'Not allowed.' });
+    const id = parseUserId(req.params.id);
+    const r = id ? await db.execute({ sql: 'SELECT id, username, email, joinedAt FROM users WHERE id = ?', args: [id] }) : { rows: [] };
+    if (!r.rows.length) return res.status(404).json({ error: 'User not found.' });
+    const s = await db.execute({ sql: 'SELECT COUNT(*) AS n FROM sessions WHERE userId = ? AND expiresAt > ?', args: [id, Date.now()] });
+    const u = r.rows[0];
+    res.json({
+        id: Number(u.id), username: String(u.username), email: u.email ? String(u.email) : '',
+        joinedAt: Number(u.joinedAt) || 0, activeSessions: Number(s.rows[0].n) || 0,
+        isSelf: Number(u.id) === Number(req.user.id)
+    });
+}));
+
+// Permanently deletes an account and signs it out everywhere. The admin cannot delete their own account here.
+app.delete('/api/admin/users/:id', route(requireUser), route(async (req, res) => {
+    if (!isAdminUser(req.user)) return res.status(403).json({ error: 'Not allowed.' });
+    const id = parseUserId(req.params.id);
+    const r = id ? await db.execute({ sql: 'SELECT id, username FROM users WHERE id = ?', args: [id] }) : { rows: [] };
+    if (!r.rows.length) return res.status(404).json({ error: 'User not found.' });
+    const target = r.rows[0];
+    if (Number(target.id) === Number(req.user.id) || isAdminUser(target)) return res.status(400).json({ error: 'This account cannot be deleted here.' });
+    await db.batch([
+        { sql: 'DELETE FROM sessions WHERE userId = ?', args: [id] },
+        { sql: 'DELETE FROM users WHERE id = ?', args: [id] }
+    ], 'write');
+    console.log(`admin ${req.user.username} deleted account #${id} (${target.username})`);
+    res.json({ ok: true, deleted: String(target.username) });
 }));
 
 app.use('/api', (req, res) => res.status(404).json({ error: 'Not found.' }));
