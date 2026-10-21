@@ -62,14 +62,21 @@ async function initDB() {
         const oldSessions = tableExists.rows.length
             ? (await db.execute('SELECT id, userId, createdAt, expiresAt FROM sessions')).rows
             : [];
-        const idMap = new Map(users.map((u, i) => [String(u.id), String(i + 1)]));
+        // If a legacy schema stores IDs as TEXT but the values are already valid numeric IDs,
+        // preserve those IDs instead of unexpectedly renumbering every account. Only truly
+        // nonnumeric legacy IDs are converted to a new sequential 1..N range.
+        const numericIds = users.map((u) => String(u.id));
+        const preserveNumericIds = numericIds.every((id) => /^[1-9][0-9]{0,18}$/.test(id))
+            && new Set(numericIds).size === numericIds.length
+            && numericIds.every((id) => BigInt(id) <= 9223372036854775807n);
+        const idMap = new Map(users.map((u, i) => [String(u.id), preserveNumericIds ? String(u.id) : String(i + 1)]));
         const statements = [
             { sql: 'DROP TABLE IF EXISTS users_numeric_migration', args: [] },
             { sql: 'CREATE TABLE users_numeric_migration (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE NOT NULL, email TEXT, password TEXT NOT NULL, passwordHash TEXT, joinedAt INTEGER, lastIp TEXT, avatarColor TEXT)', args: [] }
         ];
         for (let i = 0; i < users.length; i++) {
             const u = users[i];
-            statements.push({ sql: 'INSERT INTO users_numeric_migration (id, username, email, password, passwordHash, joinedAt, lastIp, avatarColor) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', args: [i + 1, u.username, u.email ?? null, u.password ?? '', u.passwordHash ?? null, u.joinedAt ?? null, u.lastIp ?? null, u.avatarColor ?? null] });
+            statements.push({ sql: 'INSERT INTO users_numeric_migration (id, username, email, password, passwordHash, joinedAt, lastIp, avatarColor) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', args: [preserveNumericIds ? String(u.id) : i + 1, u.username, u.email ?? null, u.password ?? '', u.passwordHash ?? null, u.joinedAt ?? null, u.lastIp ?? null, u.avatarColor ?? null] });
         }
         if (tableExists.rows.length) statements.push({ sql: 'DROP TABLE sessions', args: [] });
         statements.push({ sql: 'DROP TABLE users', args: [] }, { sql: 'ALTER TABLE users_numeric_migration RENAME TO users', args: [] });
