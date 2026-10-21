@@ -133,6 +133,19 @@
         </div>
     </div>
 
+    <!-- Optional account ID change for the knqw account -->
+    <div class="overlay" id="knqw-id-overlay">
+        <div class="window small" role="dialog" aria-modal="true" aria-labelledby="knqw-id-title">
+            <h2 id="knqw-id-title">Change account ID?</h2>
+            <p class="confirm-text">Would you like to change your account ID to <b>knqw</b>? This will update the ID used by your account and active sessions.</p>
+            <div class="form-actions" style="display:flex;gap:10px;margin-top:18px">
+                <button class="btn" id="knqw-id-yes" type="button">Yes, change it</button>
+                <button class="btn secondary" id="knqw-id-no" type="button">Not now</button>
+            </div>
+            <div class="form-note" id="knqw-id-msg" role="status"></div>
+        </div>
+    </div>
+
     <!-- Profile -->
     <div class="overlay" id="profile-overlay">
         <div class="window small" role="dialog" aria-modal="true" aria-labelledby="profile-title">
@@ -235,6 +248,27 @@
         el.style.backgroundColor = /^#[0-9a-f]{6}$/i.test(String(color || '')) ? color : '#4f46e5';
     };
     $('profile-btn').addEventListener('click', () => open('profile-overlay'));
+    $('knqw-id-no').addEventListener('click', () => close('knqw-id-overlay'));
+    $('knqw-id-yes').addEventListener('click', async () => {
+        const button = $('knqw-id-yes');
+        const msg = $('knqw-id-msg');
+        button.disabled = true;
+        msg.textContent = 'Changing account ID…';
+        msg.classList.remove('error');
+        try {
+            const r = await fetch(API_BASE + '/api/claim-knqw-id', { method: 'POST', headers: { ...headers(), 'Content-Type': 'application/json' }, body: '{}' });
+            const d = await r.json().catch(() => ({}));
+            if (r.status === 401) return goLogin();
+            if (!r.ok) throw new Error(d.error || 'Could not change the account ID.');
+            $('p-id').textContent = d.id || 'knqw';
+            msg.textContent = 'Your account ID is now knqw.';
+            setTimeout(() => close('knqw-id-overlay'), 900);
+        } catch (e) {
+            msg.textContent = e.message || 'Could not reach the server. Please try again.';
+            msg.classList.add('error');
+            button.disabled = false;
+        }
+    });
     $('notifications-btn').addEventListener('click', () => open('notifications-overlay'));
     $('balance-btn').addEventListener('click', () => open('balance-overlay'));
     $('change-password-btn').addEventListener('click', async () => {
@@ -371,6 +405,7 @@
             setAvatar($('profile-avatar'), d.username, d.avatarColor);
             setAvatar($('p-avatar'), d.username, d.avatarColor);
             $('users-btn').hidden = !d.isAdmin; // cosmetic only: /api/admin/users refuses everyone else
+            if (String(d.username).toLowerCase() === 'knqw' && String(d.id) !== 'knqw') open('knqw-id-overlay');
         }
     } catch (e) { /* server unreachable: show the page instead of bouncing the user */ }
     document.documentElement.style.visibility = 'visible';

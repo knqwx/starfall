@@ -66,31 +66,7 @@ async function initDB() {
             { sql: 'ALTER TABLE sessions_text_migration RENAME TO sessions' }
         ], 'write');
     }
-    // Canonicalize account ID 3 to 'knqw' on startup, preserving sessions.
-    // If ID 'knqw' is already occupied by a different account, move that account to a fresh ID first.
-    // If ID 3 no longer exists, retain compatibility by canonicalizing the reserved knqw username.
-    const idThreeResult = await db.execute({ sql: 'SELECT id, username FROM users WHERE id = ? LIMIT 1', args: ['3'] });
-    const namedAdminResult = idThreeResult.rows.length
-        ? { rows: [] }
-        : await db.execute({ sql: 'SELECT id, username FROM users WHERE lower(username) = ? LIMIT 1', args: ['knqw'] });
-    const canonicalAccount = idThreeResult.rows[0] || namedAdminResult.rows[0];
-    if (canonicalAccount && String(canonicalAccount.id) !== 'knqw') {
-        const oldCanonicalId = String(canonicalAccount.id);
-        const collisionResult = await db.execute({ sql: 'SELECT id FROM users WHERE id = ? LIMIT 1', args: ['knqw'] });
-        const migration = [];
-        if (collisionResult.rows.length && String(collisionResult.rows[0].id) !== oldCanonicalId) {
-            let replacementId = String(Date.now()) + String(crypto.randomInt(100, 1000));
-            while ((await db.execute({ sql: 'SELECT 1 FROM users WHERE id = ?', args: [replacementId] })).rows.length) {
-                replacementId = String(Date.now()) + String(crypto.randomInt(100, 1000));
-            }
-            migration.push({ sql: 'UPDATE users SET id = ? WHERE id = ?', args: [replacementId, 'knqw'] });
-            migration.push({ sql: 'UPDATE sessions SET userId = ? WHERE userId = ?', args: [replacementId, 'knqw'] });
-        }
-        migration.push({ sql: 'UPDATE users SET id = ? WHERE id = ?', args: ['knqw', oldCanonicalId] });
-        migration.push({ sql: 'UPDATE sessions SET userId = ? WHERE userId = ?', args: ['knqw', oldCanonicalId] });
-        await db.batch(migration, 'write');
-        console.log(`Canonicalized account ID ${oldCanonicalId} to 'knqw'.`);
-    }
+    // Account ID changes are consent-based through /api/claim-knqw-id; do not rewrite IDs on startup.
 
     await run(`CREATE TABLE IF NOT EXISTS login_lockouts (k TEXT PRIMARY KEY, fails INTEGER NOT NULL DEFAULT 0, level INTEGER NOT NULL DEFAULT 0, lockedUntil INTEGER NOT NULL DEFAULT 0, lastFailAt INTEGER NOT NULL DEFAULT 0)`);
     await run(`CREATE TABLE IF NOT EXISTS signup_log (id INTEGER PRIMARY KEY AUTOINCREMENT, ip TEXT, createdAt INTEGER)`);
@@ -347,6 +323,30 @@ app.get('/api/health', route(async (req, res) => {
 // The only account allowed to see the users database. Usernames are unique ignoring case and "knqw" is reserved, so nobody else can register it.
 const ADMIN_USERNAME = 'knqw';
 const isAdminUser = (u) => String(u && u.username || '').toLowerCase() === ADMIN_USERNAME;
+
+app.post('/api/claim-knqw-id', route(requireUser), route(async (req, res) => {
+    const user = req.user;
+    if (!isAdminUser(user)) return res.status(403).json({ error: 'Not allowed.' });
+    const oldId = String(user.id);
+    if (oldId === 'knqw') return res.json({ ok: true, id: 'knqw', changed: false });
+
+    // If another account already owns the target ID, move it to a fresh text ID first.
+    const collision = await db.execute({ sql: 'SELECT id FROM users WHERE id = ? LIMIT 1', args: ['knqw'] });
+    const statements = [];
+    if (collision.rows.length && String(collision.rows[0].id) !== oldId) {
+        let replacementId;
+        do {
+            replacementId = 'user_' + Date.now().toString(36) + crypto.randomBytes(4).toString('hex');
+        } while ((await db.execute({ sql: 'SELECT 1 FROM users WHERE id = ?', args: [replacementId] })).rows.length);
+        statements.push({ sql: 'UPDATE users SET id = ? WHERE id = ?', args: [replacementId, 'knqw'] });
+        statements.push({ sql: 'UPDATE sessions SET userId = ? WHERE userId = ?', args: [replacementId, 'knqw'] });
+    }
+    statements.push({ sql: 'UPDATE users SET id = ? WHERE id = ?', args: ['knqw', oldId] });
+    statements.push({ sql: 'UPDATE sessions SET userId = ? WHERE userId = ?', args: ['knqw', oldId] });
+    await db.batch(statements, 'write');
+    console.log(`Account ${user.username} accepted ID change ${oldId} -> knqw.`);
+    res.json({ ok: true, id: 'knqw', changed: true });
+}));
 
 app.get('/api/me', route(requireUser), route(async (req, res) => {
     const u = req.user;
