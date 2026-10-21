@@ -19,46 +19,70 @@
             position: relative;
         }
         .container {
-            width: 440px;
+            width: 410px;
             background-color: #22222b;
             display: flex;
             flex-direction: column;
             align-items: center;
             border-radius: 12px;
             box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
-            padding: 40px 30px 30px 30px;
+            padding: 35px 25px 25px 25px;
             box-sizing: border-box;
         }
+        .logo-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin-bottom: 25px;
+        }
         .logo {
-            width: 80px;
-            height: 80px;
-            margin-bottom: 30px;
+            width: 75px;
+            height: 75px;
+            margin-bottom: 8px;
             object-fit: contain;
+        }
+        .logo-title {
+            font-size: 1.25rem;
+            font-weight: bold;
+            color: #ffffff;
+            letter-spacing: 0.5px;
         }
         .input-group {
             width: 100%;
-            margin-bottom: 20px;
+            margin-bottom: 18px;
             transition: all 0.3s ease;
+            position: relative;
         }
         .input-group label {
             display: block;
-            margin-bottom: 8px;
-            font-size: 1rem;
+            margin-bottom: 6px;
+            font-size: 0.95rem;
             color: #b3b3b9;
         }
         .input-group input {
             width: 100%;
-            padding: 12px;
+            padding: 11px;
             background-color: #18181f;
             border: 1px solid #33333d;
             border-radius: 6px;
             color: #ffffff;
-            font-size: 1.1rem;
+            font-size: 1rem;
             box-sizing: border-box;
         }
         .input-group input:focus {
             outline: none;
             border-color: #555566;
+        }
+        .input-group input.error {
+            border-color: #f93b3b;
+        }
+        .error-msg {
+            position: absolute;
+            bottom: -18px;
+            left: 0;
+            font-size: 0.75rem;
+            color: #f93b3b;
+            display: none;
         }
         #email-group {
             max-height: 0;
@@ -70,27 +94,27 @@
         #email-group.show {
             max-height: 120px;
             opacity: 1;
-            margin-bottom: 20px;
+            margin-bottom: 25px;
         }
         .action-btn {
             width: 100%;
-            padding: 14px;
+            padding: 13px;
             background-color: #3b3bf9;
             border: none;
             border-radius: 6px;
             color: #ffffff;
-            font-size: 1.1rem;
+            font-size: 1rem;
             font-weight: bold;
             cursor: pointer;
-            margin-top: 10px;
+            margin-top: 5px;
             transition: background-color 0.2s;
         }
         .action-btn:hover {
             background-color: #3131d9;
         }
         .toggle-text {
-            margin-top: 20px;
-            font-size: 0.95rem;
+            margin-top: 18px;
+            font-size: 0.9rem;
             color: #b3b3b9;
             text-align: center;
         }
@@ -106,16 +130,16 @@
         .footer-links {
             position: absolute;
             bottom: 25px;
-            left: 40px;
-            right: 40px;
+            left: 50%;
+            transform: translateX(-50%);
             display: flex;
-            justify-content: space-between;
+            gap: 25px;
             align-items: center;
         }
         .footer-links a {
             color: #7b7b85;
             text-decoration: none;
-            font-size: 1rem;
+            font-size: 0.95rem;
         }
         .footer-links a:hover {
             color: #ffffff;
@@ -125,7 +149,10 @@
 <body>
 
     <div class="container">
-        <img src="assets/Starfall.webp" alt="Starfall" class="logo">
+        <div class="logo-container">
+            <img src="assets/Starfall.webp" alt="Starfall" class="logo">
+            <span class="logo-title">Starfall</span>
+        </div>
         
         <div class="input-group">
             <label for="username">Username</label>
@@ -135,6 +162,7 @@
         <div class="input-group" id="email-group">
             <label for="email">Email</label>
             <input type="email" id="email">
+            <span class="error-msg" id="email-error">Invalid or non-existent email</span>
         </div>
 
         <div class="input-group">
@@ -160,12 +188,18 @@
         const emailGroup = document.getElementById('email-group');
         const toggleContainer = document.getElementById('toggle-container');
         const toggleLink = document.getElementById('toggle-link');
+        const emailInput = document.getElementById('email');
+        const emailError = document.getElementById('email-error');
 
         let isLoginMode = true;
 
         function updateMode(e) {
             e.preventDefault();
             isLoginMode = !isLoginMode;
+
+            emailInput.classList.remove('error');
+            emailError.style.display = 'none';
+            emailInput.value = '';
 
             if (isLoginMode) {
                 submitBtn.textContent = 'Log In';
@@ -181,6 +215,25 @@
         }
 
         toggleLink.addEventListener('click', updateMode);
+
+        submitBtn.addEventListener('click', (e) => {
+            if (!isLoginMode) {
+                const emailVal = emailInput.value.trim();
+                const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                
+                const fakeMxBlocklist = ['test.com', 'fakemail.com', 'asdf.com', 'mailinator.com'];
+                const domain = emailVal.split('@')[1];
+
+                if (!emailRegex.test(emailVal) || (domain && fakeMxBlocklist.includes(domain.toLowerCase()))) {
+                    e.preventDefault();
+                    emailInput.classList.add('error');
+                    emailError.style.display = 'block';
+                } else {
+                    emailInput.classList.remove('error');
+                    emailError.style.display = 'none';
+                }
+            }
+        });
     </script>
 </body>
 </html>
