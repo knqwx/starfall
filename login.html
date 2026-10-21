@@ -266,14 +266,14 @@
         if (isLoginMode) return;
         clearTimeout(userTimer);
         const username = mainInput.value.trim();
-        if (new TextEncoder().encode(username).length > 40 * 1024) {
+        if (new TextEncoder().encode(username).length > 30) {
             userSeq++;
-            setStatus(usernameStatus, 'bad', 'Username is too long. Maximum size is 40 KB.');
+            setStatus(usernameStatus, 'bad', 'Username is too long. Maximum size is 30 bytes.');
             return;
         }
-        if (username && !/^[A-Za-z0-9_.-]+$/.test(username)) {
+        if (username && !/^[A-Za-z0-9_]+$/.test(username)) {
             userSeq++;
-            setStatus(usernameStatus, 'bad', 'Usernames can only contain English letters, numbers, dots, underscores, and hyphens.');
+            setStatus(usernameStatus, 'bad', 'Usernames can only contain English letters, numbers, and underscores.');
             return;
         }
         setStatus(usernameStatus, '', username ? 'Checking...' : '');
@@ -299,8 +299,8 @@
             if (!isLoginMode) {
                 const username = mainInput.value.trim(), email = emailInput.value.trim().toLowerCase();
                 if (!username || !email || !password) { showError('Please fill in all fields.'); return; }
-                if (new TextEncoder().encode(username).length > 40 * 1024) { showError('Username is too long. Maximum size is 40 KB.'); return; }
-                if (!/^[A-Za-z0-9_.-]+$/.test(username)) { showError('Usernames can only contain English letters, numbers, dots, underscores, and hyphens.'); return; }
+                if (new TextEncoder().encode(username).length > 30) { showError('Username is too long. Maximum size is 30 bytes.'); return; }
+                if (!/^[A-Za-z0-9_]+$/.test(username)) { showError('Usernames can only contain English letters, numbers, and underscores.'); return; }
                 if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) { showError('Please enter a valid email address.'); return; }
                 $('loading-title').textContent = 'Creating your account…';
                 loading.classList.add('active');

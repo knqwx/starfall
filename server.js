@@ -170,11 +170,11 @@ function isReservedUsername(name) {
     return false;
 }
 // Usernames are limited to ASCII English letters, digits, dots, underscores, and hyphens.
-const MAX_USERNAME_BYTES = 40 * 1024;
+const MAX_USERNAME_BYTES = 30;
 function checkUsername(name) {
     if (!name) return 'Please enter a username.';
-    if (Buffer.byteLength(name, 'utf8') > MAX_USERNAME_BYTES) return 'Username is too long. Maximum size is 40 KB.';
-    if (!/^[A-Za-z0-9_.-]+$/.test(name)) return 'Usernames can only contain English letters, numbers, dots, underscores, and hyphens.';
+    if (Buffer.byteLength(name, 'utf8') > MAX_USERNAME_BYTES) return 'Username is too long. Maximum size is 30 bytes.';
+    if (!/^[A-Za-z0-9_]+$/.test(name)) return 'Usernames can only contain English letters, numbers, and underscores.';
     if (isReservedUsername(name)) return 'This username is reserved. Please choose another one.';
     return '';
 }
