@@ -348,9 +348,19 @@
                     },
                     body: JSON.stringify(payload)
                 });
-                const data = await response.json().catch(() => ({}));
+                const rawText = await response.text();
+                let data = {};
+                try { data = JSON.parse(rawText); } catch (_) {}
 
                 if (!response.ok) {
+                    // DEBUG: показываем технические детали (удобно на телефоне)
+                    alert(
+                        'DEBUG\n' +
+                        'URL: ' + response.url + '\n' +
+                        'Status: ' + response.status + '\n' +
+                        'Content-Type: ' + (response.headers.get('content-type') || '-') + '\n' +
+                        'Body: ' + rawText.slice(0, 300)
+                    );
                     if (response.status === 409) {
                         alert(data.error || 'Username already exists');
                     } else if (response.status === 400) {
@@ -371,7 +381,8 @@
                 window.location.href = 'starfall.html';
             } catch (err) {
                 console.error('Authentication request failed:', err);
-                alert('Could not reach the Starfall server. Please try again in a moment.');
+                // DEBUG
+                alert('DEBUG network error\nURL: ' + API_BASE + endpoint + '\npage: ' + location.href + '\n' + (err && err.message ? err.message : err));
             } finally {
                 submitBtn.disabled = false;
                 submitBtn.textContent = originalText;
