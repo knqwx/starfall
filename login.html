@@ -127,12 +127,17 @@
             font-size: 0.9rem;
             color: #b3b3b9;
             text-align: center;
-        }
-        .toggle-text a {
-            color: #3b3bf9;
-            text-decoration: none;
-            font-weight: bold;
             cursor: pointer;
+            user-select: none;
+            padding: 5px;
+        }
+        .toggle-text span {
+            color: #3b3bf9;
+            font-weight: bold;
+            text-decoration: underline;
+        }
+        .toggle-text:hover span {
+            color: #3131d9;
         }
         .footer-links {
             position: absolute;
@@ -181,7 +186,7 @@
         <button class="action-btn" id="submit-btn">Log In</button>
 
         <div class="toggle-text" id="toggle-container">
-            <span id="toggle-label">Don't have an account?</span> <a id="toggle-link">Sign up</a>
+            Don't have an account? <span id="toggle-action">Sign up</span>
         </div>
     </div>
 
@@ -194,7 +199,7 @@
     <script type="module">
         import { createClient } from "https://esm.sh/@libsql/client@0.14.0";
 
-        // Вставь свои данные Turso сюда
+        // Замени на свои реальные данные Turso
         const db = createClient({
             url: "ТВОЙ_TURSO_URL",
             authToken: "ТВОЙ_TURSO_TOKEN"
@@ -218,8 +223,7 @@
 
         const submitBtn = document.getElementById('submit-btn');
         const emailGroup = document.getElementById('email-group');
-        const toggleLink = document.getElementById('toggle-link');
-        const toggleLabel = document.getElementById('toggle-label');
+        const toggleContainer = document.getElementById('toggle-container');
         const emailInput = document.getElementById('email');
         const emailError = document.getElementById('email-error');
         const usernameInput = document.getElementById('username');
@@ -227,9 +231,8 @@
 
         let isLoginMode = true;
 
-        // Надежное переключение режимов без пересоздания элементов
-        toggleLink.addEventListener('click', (e) => {
-            e.preventDefault();
+        // Надежное переключение режимов по клику
+        toggleContainer.addEventListener('click', () => {
             isLoginMode = !isLoginMode;
 
             emailInput.classList.remove('error', 'success');
@@ -243,17 +246,15 @@
             if (isLoginMode) {
                 submitBtn.textContent = 'Log In';
                 emailGroup.classList.remove('show');
-                toggleLabel.textContent = "Don't have an account?";
-                toggleLink.textContent = "Sign up";
+                toggleContainer.innerHTML = 'Don\'t have an account? <span id="toggle-action">Sign up</span>';
             } else {
                 submitBtn.textContent = 'Sign Up';
                 emailGroup.classList.add('show');
-                toggleLabel.textContent = "Already have an account?";
-                toggleLink.textContent = "Log in";
+                toggleContainer.innerHTML = 'Already have an account? <span id="toggle-action">Log in</span>';
             }
         });
 
-        // Проверка доступности ника в реальном времени при регистрации
+        // Проверка доступности ника в реальном времени
         usernameInput.addEventListener('input', async () => {
             const val = usernameInput.value.trim();
             if (val.length === 0 || isLoginMode) {
@@ -284,7 +285,7 @@
             }
         });
 
-        // Кнопка отправки формы (Вход или Регистрация с авто-генерацией ID 1+)
+        // Обработка кнопки Входа / Регистрации
         submitBtn.addEventListener('click', async (e) => {
             e.preventDefault();
             const usernameVal = usernameInput.value.trim();
