@@ -32,11 +32,18 @@
         .avatar { display: inline-flex; flex: 0 0 auto; width: 30px; height: 30px; border-radius: 50%; align-items: center; justify-content: center; color: #fff; font-size: 0.9rem; font-weight: 800; border: 1px solid rgba(255,255,255,.28); text-transform: uppercase; }
         .profile-avatar-large { width: 64px; height: 64px; font-size: 1.5rem; margin: 0 auto 16px; }
         .top-btn[hidden] { display: none; }
-        .hero { position: relative; display: flex; justify-content: center; align-items: center; min-height: calc(100vh - 80px); min-height: calc(100dvh - 80px); }
+        .main-nav { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 12px 16px; background: #1c1c25; border-bottom: 1px solid #30303b; }
+        .nav-btn { background: transparent; color: #c7c7d2; border: 1px solid transparent; border-radius: 7px; padding: 10px 18px; font-size: .95rem; font-weight: 700; cursor: pointer; }
+        .nav-btn:hover { background: #292936; color: #fff; }
+        .nav-btn.active { background: #30304a; color: #fff; border-color: #454565; }
+        .hero { position: relative; display: flex; justify-content: center; align-items: center; min-height: calc(100vh - 130px); min-height: calc(100dvh - 130px); }
+        .page-view { position: relative; min-height: calc(100vh - 130px); min-height: calc(100dvh - 130px); display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 28px 18px; text-align: center; }
+        .page-view p { color: #a6a6b3; margin-top: 8px; }
+        .page-view[hidden], .hero[hidden] { display: none !important; }
         .admin-tools { position: absolute; top: 14px; right: 18px; }
         .icon-btn { min-width: 42px; padding: 9px 12px; font-size: 1.1rem; line-height: 1; }
         .notification-empty { color: #a6a6b3; text-align: center; padding: 22px 0 8px; }
-        @media (max-width: 600px) { .admin-tools { top: 12px; right: 10px; } .icon-btn { min-width: 36px; padding: 7px 10px; } }
+        @media (max-width: 600px) { .admin-tools { top: 12px; right: 10px; } .icon-btn { min-width: 36px; padding: 7px 10px; } .main-nav { gap: 4px; padding: 8px 5px; } .nav-btn { padding: 9px 11px; font-size: .85rem; } }
         h1 { font-size: 3rem; letter-spacing: 2px; margin: 0; }
 
         .overlay { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.75); display: none; align-items: center; justify-content: center; padding: 16px; z-index: 500; }
@@ -96,7 +103,16 @@
         </div>
     </header>
 
-    <div class="hero"><div class="admin-tools"><button class="top-btn" id="users-btn" type="button" hidden>Users database</button></div><h1>Starfall</h1></div>
+    <nav class="main-nav" aria-label="Main navigation">
+        <button class="nav-btn active" id="home-nav-btn" type="button" aria-current="page">Home</button>
+        <button class="nav-btn" id="marketplace-nav-btn" type="button">Marketplace</button>
+        <button class="nav-btn" id="middlemen-nav-btn" type="button">Middlemen</button>
+    </nav>
+    <main>
+        <section class="hero" id="home-view"><div class="admin-tools"><button class="top-btn" id="users-btn" type="button" hidden>Users database</button></div><h1>Starfall</h1></section>
+        <section class="page-view" id="marketplace-view" hidden><h1>Marketplace</h1><p>The marketplace is coming soon.</p></section>
+        <section class="page-view" id="middlemen-view" hidden><h1>Middlemen</h1><p>The middlemen directory is coming soon.</p></section>
+    </main>
 
     <!-- Balance -->
     <div class="overlay" id="balance-overlay">
@@ -169,12 +185,6 @@
                 <div class="profile-row"><span>Email</span><span id="d-email">-</span></div>
                 <div class="profile-row"><span>Member since</span><span id="d-joined">-</span></div>
                 <div class="profile-row"><span>Active sessions</span><span id="d-sessions">-</span></div>
-                <div id="d-change-id-section">
-                    <label class="field-label" for="d-new-id">Change account ID</label>
-                    <input class="field-input" id="d-new-id" type="text" maxlength="32" pattern="[A-Za-z0-9_-]{1,32}" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Letters, numbers, _ or -">
-                    <button class="btn" id="d-change-id-btn" type="button">Save new ID</button>
-                    <div class="form-note" id="d-id-msg" role="status"></div>
-                </div>
                 <button class="btn danger" id="d-delete-btn" type="button">Delete account</button>
                 <div class="note" id="d-self-note" hidden>This is your own account. It cannot be deleted here.</div>
                 <div id="d-confirm" hidden>
@@ -203,6 +213,21 @@
     document.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => close(b.dataset.close)));
     document.querySelectorAll('.overlay').forEach((o) => o.addEventListener('click', (e) => { if (e.target === o) close(o.id); }));
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape') document.querySelectorAll('.overlay.active').forEach((o) => close(o.id)); });
+
+    // ----- main navigation -----
+    const navViews = { home: 'home-view', marketplace: 'marketplace-view', middlemen: 'middlemen-view' };
+    function showPage(page) {
+        Object.entries(navViews).forEach(([name, id]) => {
+            $(id).hidden = name !== page;
+            const button = $(name + '-nav-btn');
+            button.classList.toggle('active', name === page);
+            if (name === page) button.setAttribute('aria-current', 'page');
+            else button.removeAttribute('aria-current');
+        });
+    }
+    $('home-nav-btn').addEventListener('click', () => showPage('home'));
+    $('marketplace-nav-btn').addEventListener('click', () => showPage('marketplace'));
+    $('middlemen-nav-btn').addEventListener('click', () => showPage('middlemen'));
 
     // ----- profile -----
     const setAvatar = (el, username, color) => {
@@ -300,10 +325,6 @@
             $('d-email').textContent = d.email || '-';
             $('d-joined').textContent = fmtDate(d.joinedAt);
             $('d-sessions').textContent = d.activeSessions;
-            $('d-new-id').value = String(d.id);
-            $('d-new-id').disabled = false;
-            $('d-change-id-btn').disabled = false;
-            $('d-id-msg').textContent = '';
             $('d-delete-btn').hidden = !!d.isSelf;
             $('d-self-note').hidden = !d.isSelf;
             $('d-confirm-name').textContent = d.username;
@@ -311,25 +332,6 @@
             $('d-body').hidden = false;
         } catch (e) { setDetailMsg('Cannot reach the server.', true); }
     }
-    $('d-change-id-btn').addEventListener('click', async () => {
-        if (!detail) return;
-        const newId = $('d-new-id').value.trim();
-        const msg = $('d-id-msg'); msg.style.color = '#ff6b6b';
-        if (!/^[A-Za-z0-9_-]{1,32}$/.test(newId)) { msg.textContent = 'Use 1–32 letters, numbers, underscores, or hyphens.'; return; }
-        if (newId === String(detail.id)) { msg.textContent = 'That account already has this ID.'; return; }
-        const button = $('d-change-id-btn'); button.disabled = true; button.textContent = 'Saving...';
-        try {
-            const r = await fetch(API_BASE + '/api/admin/users/' + encodeURIComponent(detail.id) + '/change-id', { method: 'POST', headers: { ...headers(), 'Content-Type': 'application/json' }, body: JSON.stringify({ newId }) });
-            const d = await r.json().catch(() => ({}));
-            if (!r.ok) { msg.textContent = d.error || 'Could not change ID.'; return; }
-            const oldId = String(detail.id); detail.id = String(d.newId);
-            $('d-id').textContent = String(d.newId); $('d-new-id').value = String(d.newId);
-            allUsers = allUsers.map((u) => String(u.id) === oldId ? { ...u, id: String(d.newId) } : u);
-            renderUsers(); msg.style.color = '#86efac'; msg.textContent = 'Account ID changed successfully.';
-        } catch (e) { msg.textContent = 'Cannot reach the server.'; }
-        finally { button.disabled = false; button.textContent = 'Save new ID'; }
-    });
-
     $('d-delete-btn').addEventListener('click', () => {
         $('d-confirm').hidden = false;
         $('d-delete-btn').hidden = true;

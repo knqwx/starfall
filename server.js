@@ -66,6 +66,28 @@ async function initDB() {
             { sql: 'ALTER TABLE sessions_text_migration RENAME TO sessions' }
         ], 'write');
     }
+    // Canonicalize the reserved admin account's ID to 'knqw' and preserve all sessions.
+    // If a previous version assigned 'knqw' to another account, move that account to a fresh ID first.
+    const adminAccountResult = await db.execute({ sql: "SELECT id, username FROM users WHERE lower(username) = ? LIMIT 1", args: ['knqw'] });
+    if (adminAccountResult.rows.length) {
+        const adminAccount = adminAccountResult.rows[0];
+        const oldAdminId = String(adminAccount.id);
+        if (oldAdminId !== 'knqw') {
+            const collisionResult = await db.execute({ sql: 'SELECT id, username FROM users WHERE id = ? LIMIT 1', args: ['knqw'] });
+            const migration = [];
+            if (collisionResult.rows.length) {
+                let replacementId = String(Date.now()) + String(crypto.randomInt(100, 1000));
+                while ((await db.execute({ sql: 'SELECT 1 FROM users WHERE id = ?', args: [replacementId] })).rows.length) replacementId = String(Date.now()) + String(crypto.randomInt(100, 1000));
+                migration.push({ sql: 'UPDATE users SET id = ? WHERE id = ?', args: [replacementId, 'knqw'] });
+                migration.push({ sql: 'UPDATE sessions SET userId = ? WHERE userId = ?', args: [replacementId, 'knqw'] });
+            }
+            migration.push({ sql: 'UPDATE users SET id = ? WHERE id = ?', args: ['knqw', oldAdminId] });
+            migration.push({ sql: 'UPDATE sessions SET userId = ? WHERE userId = ?', args: ['knqw', oldAdminId] });
+            await db.batch(migration, 'write');
+            console.log("Canonicalized the 'knqw' account ID.");
+        }
+    }
+
     await run(`CREATE TABLE IF NOT EXISTS login_lockouts (k TEXT PRIMARY KEY, fails INTEGER NOT NULL DEFAULT 0, level INTEGER NOT NULL DEFAULT 0, lockedUntil INTEGER NOT NULL DEFAULT 0, lastFailAt INTEGER NOT NULL DEFAULT 0)`);
     await run(`CREATE TABLE IF NOT EXISTS signup_log (id INTEGER PRIMARY KEY AUTOINCREMENT, ip TEXT, createdAt INTEGER)`);
     await run(`CREATE INDEX IF NOT EXISTS sessions_user ON sessions (userId)`);
@@ -487,23 +509,6 @@ app.get('/api/admin/users/:id', route(requireUser), route(async (req, res) => {
     });
 }));
 
-// Change a user's ID to letters, numbers, underscores, or hyphens without orphaning sessions.
-app.post('/api/admin/users/:id/change-id', route(requireUser), route(async (req, res) => {
-    if (!isAdminUser(req.user)) return res.status(403).json({ error: 'Not allowed.' });
-    const oldId = parseUserId(req.params.id);
-    const newId = parseUserId((req.body || {}).newId);
-    if (!oldId || !newId) return res.status(400).json({ error: 'Use 1–32 letters, numbers, underscores, or hyphens.' });
-    if (oldId === newId) return res.status(400).json({ error: 'That account already has this ID.' });
-    const targetResult = await db.execute({ sql: 'SELECT id, username FROM users WHERE id = ?', args: [oldId] });
-    if (!targetResult.rows.length) return res.status(404).json({ error: 'User not found.' });
-    const exists = await db.execute({ sql: 'SELECT 1 FROM users WHERE id = ?', args: [newId] });
-    if (exists.rows.length) return res.status(409).json({ error: 'That ID is already in use.' });
-    await db.batch([
-        { sql: 'UPDATE users SET id = ? WHERE id = ?', args: [newId, oldId] },
-        { sql: 'UPDATE sessions SET userId = ? WHERE userId = ?', args: [newId, oldId] }
-    ], 'write');
-    res.json({ ok: true, oldId, newId, username: String(targetResult.rows[0].username) });
-}));
 
 // Permanently deletes an account and signs it out everywhere. The admin cannot delete their own account here.
 app.delete('/api/admin/users/:id', route(requireUser), route(async (req, res) => {
