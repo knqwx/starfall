@@ -15,12 +15,19 @@
             min-height: 100vh;
             min-height: 100dvh;
         }
-        .topbar { display: flex; justify-content: flex-end; gap: 10px; padding: 14px 16px; flex-wrap: wrap; }
+        .site-header { position: relative; min-height: 108px; padding-top: 12px; }
+        .site-logo { display: flex; justify-content: center; align-items: center; padding: 6px 150px 0; }
+        .site-logo img { display: block; width: auto; height: 72px; max-width: min(70vw, 320px); object-fit: contain; }
+        .topbar { position: absolute; top: 12px; right: 16px; display: flex; justify-content: flex-end; align-items: center; gap: 10px; padding: 0; flex-wrap: wrap; }
         .top-btn {
             background: #22222b; color: #fff; border: 1px solid #33333d; border-radius: 6px;
             padding: 9px 16px; font-size: 0.95rem; font-weight: bold; cursor: pointer;
         }
         .top-btn:hover { background: #2c2c38; border-color: #555566; }
+        .profile-trigger { display: inline-flex; align-items: center; gap: 9px; max-width: min(52vw, 260px); }
+        .profile-trigger-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .avatar { display: inline-flex; flex: 0 0 auto; width: 30px; height: 30px; border-radius: 50%; align-items: center; justify-content: center; color: #fff; font-size: 0.9rem; font-weight: 800; border: 1px solid rgba(255,255,255,.28); text-transform: uppercase; }
+        .profile-avatar-large { width: 64px; height: 64px; font-size: 1.5rem; margin: 0 auto 16px; }
         .top-btn[hidden] { display: none; }
         .hero { display: flex; justify-content: center; align-items: center; min-height: calc(100vh - 80px); min-height: calc(100dvh - 80px); }
         h1 { font-size: 3rem; letter-spacing: 2px; margin: 0; }
@@ -41,6 +48,10 @@
         .profile-row span:last-child { text-align: right; overflow-wrap: anywhere; }
         .btn { width: 100%; margin-top: 18px; padding: 12px; background: #3b3bf9; color: #fff; border: 0; border-radius: 6px; font-size: 1rem; font-weight: bold; cursor: pointer; }
         .btn:hover { background: #3131d9; }
+        .field-label { display: block; font-size: .9rem; color: #c9c9d2; margin: 14px 0 6px; }
+        .field-input { width: 100%; padding: 11px; background: #18181f; border: 1px solid #33333d; border-radius: 6px; color: #fff; font-size: 1rem; }
+        .section-title { margin: 22px 0 8px; font-size: 1rem; }
+        .form-note { font-size: .85rem; color: #a6a6b3; margin-top: 10px; text-align: center; }
 
         .search { width: 100%; padding: 10px; background: #18181f; border: 1px solid #33333d; border-radius: 6px; color: #fff; font-size: 1rem; margin-bottom: 8px; }
         .search:focus { outline: none; border-color: #555566; }
@@ -62,13 +73,17 @@
         .note { color: #9a9aa5; font-size: 0.85rem; margin-top: 16px; text-align: center; }
         .confirm-text { color: #cfcfd6; font-size: 0.85rem; line-height: 1.45; margin: 16px 0 10px; }
         .confirm-text b { color: #fff; overflow-wrap: anywhere; }
+        @media (max-width: 600px) { .site-header { min-height: 142px; padding-top: 65px; } .site-logo { padding: 0 12px; } .site-logo img { height: 62px; } .topbar { top: 10px; right: 10px; left: 10px; justify-content: flex-end; } .profile-trigger { padding: 6px 9px; } .avatar { width: 27px; height: 27px; } }
     </style>
 </head>
 <body>
-    <div class="topbar">
-        <button class="top-btn" id="users-btn" type="button" hidden>Users database</button>
-        <button class="top-btn" id="profile-btn" type="button">Profile</button>
-    </div>
+    <header class="site-header">
+        <div class="site-logo"><img src="assets/Starfall.webp" alt="Starfall"></div>
+        <div class="topbar">
+            <button class="top-btn" id="users-btn" type="button" hidden>Users database</button>
+            <button class="top-btn profile-trigger" id="profile-btn" type="button"><span class="avatar" id="profile-avatar" aria-hidden="true">?</span><span class="profile-trigger-name" id="profile-btn-name">Profile</span></button>
+        </div>
+    </header>
 
     <div class="hero"><h1>Starfall</h1></div>
 
@@ -77,9 +92,20 @@
         <div class="window small" role="dialog" aria-modal="true" aria-labelledby="profile-title">
             <button class="close-x" type="button" data-close="profile-overlay" aria-label="Close">&times;</button>
             <h2 id="profile-title">Profile</h2>
+            <div class="avatar profile-avatar-large" id="p-avatar" aria-hidden="true">?</div>
             <div class="profile-row"><span>Username</span><span id="p-username">-</span></div>
+            <div class="profile-row"><span>Account ID</span><span id="p-id">-</span></div>
             <div class="profile-row"><span>Email</span><span id="p-email">-</span></div>
             <div class="profile-row"><span>Member since</span><span id="p-joined">-</span></div>
+            <h3 class="section-title">Change password</h3>
+            <label class="field-label" for="current-password">Current password</label>
+            <input class="field-input" id="current-password" type="password" autocomplete="current-password">
+            <label class="field-label" for="new-password">New password (at least 8 bytes)</label>
+            <input class="field-input" id="new-password" type="password" autocomplete="new-password">
+            <label class="field-label" for="confirm-password">Confirm new password</label>
+            <input class="field-input" id="confirm-password" type="password" autocomplete="new-password">
+            <button class="btn" id="change-password-btn" type="button">Change password</button>
+            <div class="form-note" id="password-msg" role="status"></div>
             <button class="btn" id="logout-btn" type="button">Log out</button>
         </div>
     </div>
@@ -113,6 +139,12 @@
                 <div class="profile-row"><span>Email</span><span id="d-email">-</span></div>
                 <div class="profile-row"><span>Member since</span><span id="d-joined">-</span></div>
                 <div class="profile-row"><span>Active sessions</span><span id="d-sessions">-</span></div>
+                <div id="d-change-id-section">
+                    <label class="field-label" for="d-new-id">Change numeric account ID</label>
+                    <input class="field-input" id="d-new-id" type="number" min="1" step="1" inputmode="numeric">
+                    <button class="btn" id="d-change-id-btn" type="button">Save new ID</button>
+                    <div class="form-note" id="d-id-msg" role="status"></div>
+                </div>
                 <button class="btn danger" id="d-delete-btn" type="button">Delete account</button>
                 <div class="note" id="d-self-note" hidden>This is your own account. It cannot be deleted here.</div>
                 <div id="d-confirm" hidden>
@@ -143,7 +175,31 @@
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape') document.querySelectorAll('.overlay.active').forEach((o) => close(o.id)); });
 
     // ----- profile -----
+    const setAvatar = (el, username, color) => {
+        el.textContent = String(username || '?').trim().charAt(0).toUpperCase() || '?';
+        el.style.backgroundColor = /^#[0-9a-f]{6}$/i.test(String(color || '')) ? color : '#4f46e5';
+    };
     $('profile-btn').addEventListener('click', () => open('profile-overlay'));
+    $('change-password-btn').addEventListener('click', async () => {
+        const button = $('change-password-btn');
+        const msg = $('password-msg');
+        const currentPassword = $('current-password').value;
+        const newPassword = $('new-password').value;
+        const confirmPassword = $('confirm-password').value;
+        msg.textContent = ''; msg.style.color = '';
+        if (!currentPassword || !newPassword || !confirmPassword) { msg.textContent = 'Fill in all password fields.'; msg.style.color = '#ff6b6b'; return; }
+        if (new TextEncoder().encode(newPassword).length < 8) { msg.textContent = 'New password must be at least 8 bytes long.'; msg.style.color = '#ff6b6b'; return; }
+        if (newPassword !== confirmPassword) { msg.textContent = 'New passwords do not match.'; msg.style.color = '#ff6b6b'; return; }
+        button.disabled = true; button.textContent = 'Changing...';
+        try {
+            const r = await fetch(API_BASE + '/api/change-password', { method: 'POST', headers: { ...headers(), 'Content-Type': 'application/json' }, body: JSON.stringify({ currentPassword, newPassword, confirmPassword }) });
+            const d = await r.json().catch(() => ({}));
+            if (!r.ok) { msg.textContent = d.error || 'Could not change password.'; msg.style.color = '#ff6b6b'; return; }
+            $('current-password').value = ''; $('new-password').value = ''; $('confirm-password').value = '';
+            msg.textContent = d.message || 'Password changed.';
+        } catch (e) { msg.textContent = 'Cannot reach the server.'; msg.style.color = '#ff6b6b'; }
+        finally { button.disabled = false; button.textContent = 'Change password'; }
+    });
     $('logout-btn').addEventListener('click', async () => {
         $('logout-btn').disabled = true;
         try { await fetch(API_BASE + '/api/logout', { method: 'POST', headers: headers() }); } catch (e) {}
@@ -212,6 +268,10 @@
             $('d-email').textContent = d.email || '-';
             $('d-joined').textContent = fmtDate(d.joinedAt);
             $('d-sessions').textContent = d.activeSessions;
+            $('d-new-id').value = String(d.id);
+            $('d-new-id').disabled = !!d.isSelf || d.isAdmin;
+            $('d-change-id-btn').disabled = !!d.isSelf || d.isAdmin;
+            $('d-id-msg').textContent = (d.isSelf || d.isAdmin) ? 'The admin account ID and your own ID cannot be changed here.' : '';
             $('d-delete-btn').hidden = !!d.isSelf;
             $('d-self-note').hidden = !d.isSelf;
             $('d-confirm-name').textContent = d.username;
@@ -219,6 +279,25 @@
             $('d-body').hidden = false;
         } catch (e) { setDetailMsg('Cannot reach the server.', true); }
     }
+    $('d-change-id-btn').addEventListener('click', async () => {
+        if (!detail || detail.isSelf || detail.isAdmin) return;
+        const newId = Number($('d-new-id').value);
+        const msg = $('d-id-msg'); msg.style.color = '#ff6b6b';
+        if (!Number.isSafeInteger(newId) || newId < 1 || String(newId).length > 15) { msg.textContent = 'Enter a valid positive numeric ID (up to 15 digits).'; return; }
+        if (newId === Number(detail.id)) { msg.textContent = 'That account already has this ID.'; return; }
+        const button = $('d-change-id-btn'); button.disabled = true; button.textContent = 'Saving...';
+        try {
+            const r = await fetch(API_BASE + '/api/admin/users/' + encodeURIComponent(detail.id) + '/change-id', { method: 'POST', headers: { ...headers(), 'Content-Type': 'application/json' }, body: JSON.stringify({ newId }) });
+            const d = await r.json().catch(() => ({}));
+            if (!r.ok) { msg.textContent = d.error || 'Could not change ID.'; return; }
+            const oldId = Number(detail.id); detail.id = d.newId;
+            $('d-id').textContent = String(d.newId); $('d-new-id').value = String(d.newId);
+            allUsers = allUsers.map((u) => Number(u.id) === oldId ? { ...u, id: d.newId } : u);
+            renderUsers(); msg.style.color = '#86efac'; msg.textContent = 'Account ID changed successfully.';
+        } catch (e) { msg.textContent = 'Cannot reach the server.'; }
+        finally { button.disabled = false; button.textContent = 'Save new ID'; }
+    });
+
     $('d-delete-btn').addEventListener('click', () => {
         $('d-confirm').hidden = false;
         $('d-delete-btn').hidden = true;
@@ -251,8 +330,12 @@
         const d = await r.json().catch(() => ({}));
         if (d.username) {
             $('p-username').textContent = d.username;
+            $('p-id').textContent = d.id == null ? '-' : String(d.id);
             $('p-email').textContent = d.email || '-';
             $('p-joined').textContent = fmtDate(d.joinedAt);
+            $('profile-btn-name').textContent = d.username;
+            setAvatar($('profile-avatar'), d.username, d.avatarColor);
+            setAvatar($('p-avatar'), d.username, d.avatarColor);
             $('users-btn').hidden = !d.isAdmin; // cosmetic only: /api/admin/users refuses everyone else
         }
     } catch (e) { /* server unreachable: show the page instead of bouncing the user */ }

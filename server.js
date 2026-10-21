@@ -35,14 +35,12 @@ async function initDB() {
         email TEXT,
         password TEXT NOT NULL
     )`);
-    for (const col of ['passwordHash TEXT', 'joinedAt INTEGER', 'lastIp TEXT']) await run(`ALTER TABLE users ADD COLUMN ${col}`);
+    for (const col of ['passwordHash TEXT', 'joinedAt INTEGER', 'lastIp TEXT', 'avatarColor TEXT']) await run(`ALTER TABLE users ADD COLUMN ${col}`);
     await run(`CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, userId INTEGER NOT NULL, createdAt INTEGER, expiresAt INTEGER)`);
     await run(`CREATE TABLE IF NOT EXISTS login_lockouts (k TEXT PRIMARY KEY, fails INTEGER NOT NULL DEFAULT 0, level INTEGER NOT NULL DEFAULT 0, lockedUntil INTEGER NOT NULL DEFAULT 0, lastFailAt INTEGER NOT NULL DEFAULT 0)`);
     await run(`CREATE TABLE IF NOT EXISTS signup_log (id INTEGER PRIMARY KEY AUTOINCREMENT, ip TEXT, createdAt INTEGER)`);
     await run(`CREATE INDEX IF NOT EXISTS sessions_user ON sessions (userId)`);
-    // Enforce case-insensitive username uniqueness at the database level where existing data permits it.
-    try { await db.execute('CREATE UNIQUE INDEX IF NOT EXISTS users_username_nocase ON users (username COLLATE NOCASE)'); }
-    catch (e) { console.warn('Could not create case-insensitive username index; check for existing case-duplicate usernames.'); }
+    try { await db.execute('CREATE UNIQUE INDEX IF NOT EXISTS users_username_nocase ON users (username COLLATE NOCASE)'); } catch (e) { console.warn('Could not create case-insensitive username index; check for existing case-duplicate usernames.'); }
     await run(`DELETE FROM sessions WHERE expiresAt < ${Date.now()}`);
     console.log('Turso Database initialized successfully');
 }
@@ -169,7 +167,7 @@ function isReservedUsername(name) {
     }
     return false;
 }
-// Usernames are limited to ASCII English letters, digits, dots, underscores, and hyphens.
+// Usernames are ASCII English letters, digits, and underscores only, maximum 30 bytes.
 const MAX_USERNAME_BYTES = 30;
 function checkUsername(name) {
     if (!name) return 'Please enter a username.';
@@ -181,6 +179,8 @@ function checkUsername(name) {
 
 // ---------- passwords (scrypt, built into Node: no extra packages) ----------
 const scrypt = (pw, salt) => new Promise((resolve, reject) => crypto.scrypt(pw, salt, 64, { N: 16384, r: 8, p: 1 }, (e, k) => (e ? reject(e) : resolve(k))));
+const AVATAR_COLORS = ['#7c3aed', '#2563eb', '#0891b2', '#059669', '#ca8a04', '#ea580c', '#db2777', '#4f46e5', '#0d9488', '#9333ea'];
+const randomAvatarColor = () => AVATAR_COLORS[crypto.randomInt(AVATAR_COLORS.length)];
 async function hashPassword(pw) {
     const salt = crypto.randomBytes(16).toString('hex');
     return `scrypt$${salt}$${(await scrypt(pw, salt)).toString('hex')}`;
@@ -269,7 +269,7 @@ const requestTokens = (req) => {
 async function currentUser(req) {
     for (const raw of requestTokens(req)) {
         const r = await db.execute({
-            sql: 'SELECT u.id, u.username, u.email, u.joinedAt FROM sessions s JOIN users u ON u.id = s.userId WHERE s.id = ? AND s.expiresAt > ?',
+            sql: 'SELECT u.id, u.username, u.email, u.joinedAt, u.avatarColor FROM sessions s JOIN users u ON u.id = s.userId WHERE s.id = ? AND s.expiresAt > ?',
             args: [sha256(raw), Date.now()]
         });
         if (r.rows.length) return { ...r.rows[0], token: raw };
@@ -299,7 +299,9 @@ app.get('/api/me', route(requireUser), route(async (req, res) => {
         username: String(u.username),
         email: u.email ? String(u.email) : '',
         joinedAt: Number(u.joinedAt) || 0,
-        isAdmin: isAdminUser(u)
+        id: Number(u.id),
+        isAdmin: isAdminUser(u),
+        avatarColor: (typeof u.avatarColor === 'string' && /^#[0-9a-f]{6}$/i.test(u.avatarColor)) ? u.avatarColor : await (async () => { const color = randomAvatarColor(); await db.execute({ sql: 'UPDATE users SET avatarColor = ? WHERE id = ?', args: [color, Number(u.id)] }); return color; })()
     });
 }));
 
@@ -373,8 +375,8 @@ app.post('/api/signup', route(async (req, res) => {
         let newId;
         try {
             const ins = await db.execute({
-                sql: "INSERT INTO users (username, email, password, passwordHash, lastIp, joinedAt) VALUES (?, ?, '', ?, ?, ?)",
-                args: [username, email, hash, ip || null, now]
+                sql: "INSERT INTO users (username, email, password, passwordHash, lastIp, joinedAt, avatarColor) VALUES (?, ?, '', ?, ?, ?, ?)",
+                args: [username, email, hash, ip || null, now, randomAvatarColor()]
             });
             newId = Number(ins.lastInsertRowid);
         } catch (e) {
@@ -407,6 +409,26 @@ app.post('/api/login', route(async (req, res) => {
     }
 }));
 
+// Change password after verifying the current password; other sessions are revoked.
+app.post('/api/change-password', route(requireUser), route(async (req, res) => {
+    if (limited('password-change:' + Number(req.user.id), 5, 15 * 60 * 1000)) return res.status(429).json({ error: 'Too many attempts. Please try again later.' });
+    const b = req.body && typeof req.body === 'object' ? req.body : {};
+    const currentPassword = String(b.currentPassword || '');
+    const newPassword = String(b.newPassword || '');
+    const confirmPassword = String(b.confirmPassword || '');
+    if (!currentPassword || !newPassword || !confirmPassword) return res.status(400).json({ error: 'Fill in all password fields.' });
+    if (Buffer.byteLength(newPassword, 'utf8') < 8) return res.status(400).json({ error: 'New password must be at least 8 bytes long.' });
+    if (Buffer.byteLength(newPassword, 'utf8') > 1024) return res.status(400).json({ error: 'New password is too long (maximum 1024 bytes).' });
+    if (newPassword !== confirmPassword) return res.status(400).json({ error: 'New passwords do not match.' });
+    const row = await db.execute({ sql: 'SELECT * FROM users WHERE id = ?', args: [Number(req.user.id)] });
+    if (!row.rows.length || !(await verifyPassword(row.rows[0], currentPassword))) return res.status(400).json({ error: 'Current password is incorrect.' });
+    const hash = await hashPassword(newPassword);
+    await db.execute({ sql: "UPDATE users SET passwordHash = ?, password = '' WHERE id = ?", args: [hash, Number(req.user.id)] });
+    const currentTokenHash = sha256(req.user.token);
+    await db.execute({ sql: 'DELETE FROM sessions WHERE userId = ? AND id <> ?', args: [Number(req.user.id), currentTokenHash] });
+    res.json({ ok: true, message: 'Password changed. Other sessions have been signed out.' });
+}));
+
 app.post('/api/logout', route(async (req, res) => {
     try {
         for (const raw of requestTokens(req)) await db.execute({ sql: 'DELETE FROM sessions WHERE id = ?', args: [sha256(raw)] });
@@ -428,8 +450,30 @@ app.get('/api/admin/users/:id', route(requireUser), route(async (req, res) => {
     res.json({
         id: Number(u.id), username: String(u.username), email: u.email ? String(u.email) : '',
         joinedAt: Number(u.joinedAt) || 0, activeSessions: Number(s.rows[0].n) || 0,
-        isSelf: Number(u.id) === Number(req.user.id)
+        isSelf: Number(u.id) === Number(req.user.id),
+        isAdmin: isAdminUser(u)
     });
+}));
+
+// Change a user's numeric account ID without orphaning their active sessions.
+app.post('/api/admin/users/:id/change-id', route(requireUser), route(async (req, res) => {
+    if (!isAdminUser(req.user)) return res.status(403).json({ error: 'Not allowed.' });
+    const oldId = parseUserId(req.params.id);
+    const newId = parseUserId(String((req.body || {}).newId || '').trim());
+    if (!oldId || !newId || !Number.isSafeInteger(newId)) return res.status(400).json({ error: 'Enter a valid positive numeric ID (up to 15 digits).' });
+    if (oldId === newId) return res.status(400).json({ error: 'That account already has this ID.' });
+    if (oldId === Number(req.user.id)) return res.status(400).json({ error: 'Your own account ID cannot be changed here.' });
+    const targetResult = await db.execute({ sql: 'SELECT id, username FROM users WHERE id = ?', args: [oldId] });
+    if (!targetResult.rows.length) return res.status(404).json({ error: 'User not found.' });
+    if (isAdminUser(targetResult.rows[0])) return res.status(400).json({ error: 'The admin account ID cannot be changed.' });
+    const exists = await db.execute({ sql: 'SELECT 1 FROM users WHERE id = ?', args: [newId] });
+    if (exists.rows.length) return res.status(409).json({ error: 'That ID is already in use.' });
+    await db.batch([
+        { sql: 'UPDATE users SET id = ? WHERE id = ?', args: [newId, oldId] },
+        { sql: 'UPDATE sessions SET userId = ? WHERE userId = ?', args: [newId, oldId] },
+        { sql: "UPDATE sqlite_sequence SET seq = MAX(seq, ?) WHERE name = 'users'", args: [newId] }
+    ], 'write');
+    res.json({ ok: true, oldId, newId, username: String(targetResult.rows[0].username) });
 }));
 
 // Permanently deletes an account and signs it out everywhere. The admin cannot delete their own account here.
