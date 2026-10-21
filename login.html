@@ -49,7 +49,7 @@
         }
         .input-group {
             width: 100%;
-            margin-bottom: 18px;
+            margin-bottom: 22px;
             transition: all 0.3s ease;
             position: relative;
         }
@@ -62,27 +62,45 @@
         .input-group input {
             width: 100%;
             padding: 11px;
-            background-color: #18181f;
+            background-color: #18181f !important;
             border: 1px solid #33333d;
             border-radius: 6px;
-            color: #ffffff;
+            color: #ffffff !important;
             font-size: 1rem;
             box-sizing: border-box;
+            -webkit-text-fill-color: #ffffff;
+        }
+        .input-group input:-webkit-autofill,
+        .input-group input:-webkit-autofill:hover, 
+        .input-group input:-webkit-autofill:focus {
+            -webkit-box-shadow: 0 0 0 30px #18181f inset !important;
+            -webkit-text-fill-color: #ffffff !important;
         }
         .input-group input:focus {
             outline: none;
             border-color: #555566;
+            background-color: #18181f !important;
         }
         .input-group input.error {
             border-color: #f93b3b;
         }
-        .error-msg {
+        .input-group input.success {
+            border-color: #3bf973;
+        }
+        .status-msg {
             position: absolute;
             bottom: -18px;
             left: 0;
             font-size: 0.75rem;
-            color: #f93b3b;
             display: none;
+        }
+        .status-msg.error {
+            color: #f93b3b;
+            display: block;
+        }
+        .status-msg.success {
+            color: #3bf973;
+            display: block;
         }
         #email-group {
             max-height: 0;
@@ -94,7 +112,7 @@
         #email-group.show {
             max-height: 120px;
             opacity: 1;
-            margin-bottom: 25px;
+            margin-bottom: 22px;
         }
         .action-btn {
             width: 100%;
@@ -129,7 +147,7 @@
         }
         .footer-links {
             position: absolute;
-            bottom: 25px;
+            bottom: 35px;
             left: 50%;
             transform: translateX(-50%);
             display: flex;
@@ -157,12 +175,13 @@
         <div class="input-group">
             <label for="username">Username</label>
             <input type="text" id="username">
+            <span class="status-msg" id="username-status"></span>
         </div>
         
         <div class="input-group" id="email-group">
             <label for="email">Email</label>
             <input type="email" id="email">
-            <span class="error-msg" id="email-error">Invalid or non-existent email</span>
+            <span class="status-msg" id="email-error">Invalid or non-existent email</span>
         </div>
 
         <div class="input-group">
@@ -190,6 +209,8 @@
         const toggleLink = document.getElementById('toggle-link');
         const emailInput = document.getElementById('email');
         const emailError = document.getElementById('email-error');
+        const usernameInput = document.getElementById('username');
+        const usernameStatus = document.getElementById('username-status');
 
         let isLoginMode = true;
 
@@ -197,9 +218,13 @@
             e.preventDefault();
             isLoginMode = !isLoginMode;
 
-            emailInput.classList.remove('error');
+            emailInput.classList.remove('error', 'success');
             emailError.style.display = 'none';
             emailInput.value = '';
+            
+            usernameInput.classList.remove('error', 'success');
+            usernameStatus.style.display = 'none';
+            usernameInput.value = '';
 
             if (isLoginMode) {
                 submitBtn.textContent = 'Log In';
@@ -216,21 +241,62 @@
 
         toggleLink.addEventListener('click', updateMode);
 
+        // Проверка доступности юзернейма в реальном времени
+        const takenUsernames = ['admin', 'user', 'root', 'starfall', 'test'];
+        usernameInput.addEventListener('input', () => {
+            const val = usernameInput.value.trim().toLowerCase();
+            if (val.length === 0) {
+                usernameInput.classList.remove('error', 'success');
+                usernameStatus.style.display = 'none';
+                return;
+            }
+
+            if (takenUsernames.includes(val)) {
+                usernameInput.classList.add('error');
+                usernameInput.classList.remove('success');
+                usernameStatus.textContent = 'Username is already taken';
+                usernameStatus.className = 'status-msg error';
+            } else {
+                usernameInput.classList.remove('error');
+                usernameInput.classList.add('success');
+                usernameStatus.textContent = 'Username is available';
+                usernameStatus.className = 'status-msg success';
+            }
+        });
+
         submitBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            const usernameVal = usernameInput.value.trim();
+            const passwordVal = document.getElementById('password').value.trim();
+
             if (!isLoginMode) {
                 const emailVal = emailInput.value.trim();
                 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-                
                 const fakeMxBlocklist = ['test.com', 'fakemail.com', 'asdf.com', 'mailinator.com'];
                 const domain = emailVal.split('@')[1];
 
+                let hasError = false;
+
                 if (!emailRegex.test(emailVal) || (domain && fakeMxBlocklist.includes(domain.toLowerCase()))) {
-                    e.preventDefault();
                     emailInput.classList.add('error');
                     emailError.style.display = 'block';
+                    hasError = true;
                 } else {
                     emailInput.classList.remove('error');
                     emailError.style.display = 'none';
+                }
+
+                if (usernameInput.classList.contains('error') || usernameVal === '') {
+                    usernameInput.classList.add('error');
+                    hasError = true;
+                }
+
+                if (!hasError && passwordVal !== '') {
+                    window.location.href = 'starfall.html';
+                }
+            } else {
+                if (usernameVal !== '' && passwordVal !== '') {
+                    window.location.href = 'starfall.html';
                 }
             }
         });
