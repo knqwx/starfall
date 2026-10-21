@@ -65,7 +65,7 @@ async function initDB() {
     const sessionSql = String(sessionDefinition.rows[0]?.sql || '').toUpperCase();
     // Legacy deployments may still tie session IDs to the numeric users table or use
     // strict/foreign-key constraints. Rebuild without legacy constraints so text IDs
-    // such as "knqw" are valid, preserving all session rows.
+    // are valid, preserving all session rows.
     const rebuildSessions = !sessionUserId
         || String(sessionUserId.type || '').trim().toUpperCase() !== 'TEXT'
         || sessionForeignKeys.rows.length > 0
@@ -79,7 +79,6 @@ async function initDB() {
             { sql: 'ALTER TABLE sessions_text_migration RENAME TO sessions', args: [] }
         ], 'write');
     }
-    // Account ID changes are consent-based through /api/claim-knqw-id; do not rewrite IDs on startup.
 
     await run(`CREATE TABLE IF NOT EXISTS login_lockouts (k TEXT PRIMARY KEY, fails INTEGER NOT NULL DEFAULT 0, level INTEGER NOT NULL DEFAULT 0, lockedUntil INTEGER NOT NULL DEFAULT 0, lastFailAt INTEGER NOT NULL DEFAULT 0)`);
     await run(`CREATE TABLE IF NOT EXISTS signup_log (id INTEGER PRIMARY KEY AUTOINCREMENT, ip TEXT, createdAt INTEGER)`);
@@ -333,33 +332,9 @@ app.get('/api/health', route(async (req, res) => {
     try { await db.execute('SELECT 1'); res.json({ ok: true }); } catch (e) { res.status(500).json({ ok: false }); }
 }));
 
-// The only account allowed to see the users database. Usernames are unique ignoring case and "knqw" is reserved, so nobody else can register it.
+// The admin account alone can access the users database. Username checks are enforced server-side.
 const ADMIN_USERNAME = 'knqw';
 const isAdminUser = (u) => String(u && u.username || '').toLowerCase() === ADMIN_USERNAME;
-
-app.post('/api/claim-knqw-id', route(requireUser), route(async (req, res) => {
-    const user = req.user;
-    if (!isAdminUser(user)) return res.status(403).json({ error: 'Not allowed.' });
-    const oldId = String(user.id);
-    if (oldId === 'knqw') return res.json({ ok: true, id: 'knqw', changed: false });
-
-    // If another account already owns the target ID, move it to a fresh text ID first.
-    const collision = await db.execute({ sql: 'SELECT id FROM users WHERE id = ? LIMIT 1', args: ['knqw'] });
-    const statements = [];
-    if (collision.rows.length && String(collision.rows[0].id) !== oldId) {
-        let replacementId;
-        do {
-            replacementId = 'user_' + Date.now().toString(36) + crypto.randomBytes(4).toString('hex');
-        } while ((await db.execute({ sql: 'SELECT 1 FROM users WHERE id = ?', args: [replacementId] })).rows.length);
-        statements.push({ sql: 'UPDATE users SET id = ? WHERE id = ?', args: [replacementId, 'knqw'] });
-        statements.push({ sql: 'UPDATE sessions SET userId = ? WHERE userId = ?', args: [replacementId, 'knqw'] });
-    }
-    statements.push({ sql: 'UPDATE users SET id = ? WHERE id = ?', args: ['knqw', oldId] });
-    statements.push({ sql: 'UPDATE sessions SET userId = ? WHERE userId = ?', args: ['knqw', oldId] });
-    await db.batch(statements, 'write');
-    console.log(`Account ${user.username} accepted ID change ${oldId} -> knqw.`);
-    res.json({ ok: true, id: 'knqw', changed: true });
-}));
 
 app.get('/api/me', route(requireUser), route(async (req, res) => {
     const u = req.user;
